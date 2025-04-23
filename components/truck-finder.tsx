@@ -65,7 +65,13 @@ export default function TruckFinder() {
   })
 
   // Available models based on selected makes
-  const availableModels = selectedMakes.flatMap((make) => truckModels[make] || [])
+  const availableModels = selectedMakes.flatMap((make) => {
+    // Try to find the manufacturer in truckModels with case-insensitive matching
+    const matchingKey = Object.keys(truckModels).find(
+      key => key.toLowerCase() === make.toLowerCase()
+    );
+    return matchingKey ? truckModels[matchingKey] : [];
+  });
 
   // Add new state variables for the new filters
   const [horsepower, setHorsepower] = useState(450)
@@ -82,7 +88,13 @@ export default function TruckFinder() {
   const [cabTypesOpen, setCabTypesOpen] = useState(false)
 
   // Update available engine models based on selected engine manufacturers
-  const availableEngineModels = selectedEngineMfrs.flatMap((mfr) => engineModels[mfr] || [])
+  const availableEngineModels = selectedEngineMfrs.flatMap((mfr) => {
+    // Try to find the manufacturer in engine models with case-insensitive matching
+    const matchingKey = Object.keys(engineModels).find(
+      key => key.toLowerCase() === mfr.toLowerCase()
+    );
+    return matchingKey ? engineModels[matchingKey] : [];
+  });
 
   // Add state variables for the new filters
   const [selectedStates, setSelectedStates] = useState<string[]>([])
@@ -123,22 +135,44 @@ export default function TruckFinder() {
           // Log each set of options to verify what's being received
           console.log("Makes:", data.makes || []);
           console.log("Models:", data.models || {});
-          console.log("Transmission Types:", data.transmissionTypes || []);
+          console.log("Transmissions:", data.transmissions || []);
           console.log("Transmission Manufacturers:", data.transmissionManufacturers || []);
           console.log("Engine Manufacturers:", data.engineManufacturers || []);
-          console.log("Engine Models:", data.engineModels || {});
+          console.log("Engine Models:", data.engineModels || []);
           console.log("Cab Types:", data.cabTypes || []);
           
           // Set all dropdown options from the database
           setTruckMakes(data.makes.map(make => ({ 
-            value: make.label,
+            value: make.label.toLowerCase(),
             label: make.label 
           })) || [])
+          
           setTruckModels(data.models || {})
-          setTransmissionTypes(data.transmissionTypes || [])
+          
+          // Map transmissions to transmissionTypes (fixing naming mismatch)
+          setTransmissionTypes(data.transmissions || [])
           setTransmissionManufacturers(data.transmissionManufacturers || [])
           setEngineManufacturers(data.engineManufacturers || [])
-          setEngineModels(data.engineModels || {})
+          
+          // For engineModels, we need to organize them by manufacturer if it's a flat array
+          if (Array.isArray(data.engineModels)) {
+            // Create a default category for models without a specific manufacturer
+            const modelsByManufacturer: Record<string, Array<{ value: string; label: string }>> = {
+              "all": data.engineModels
+            };
+            
+            // If we have engine manufacturers, use the first one as default
+            if (data.engineManufacturers && data.engineManufacturers.length > 0) {
+              const defaultMfr = data.engineManufacturers[0].value;
+              modelsByManufacturer[defaultMfr] = data.engineModels;
+            }
+            
+            setEngineModels(modelsByManufacturer);
+          } else {
+            // It's already in the correct format
+            setEngineModels(data.engineModels || {});
+          }
+          
           setCabTypes(data.cabTypes || [])
         } else {
           console.error("Failed to fetch filter options:", data.error)
@@ -1164,8 +1198,7 @@ export default function TruckFinder() {
               )}
             </div>
             <p className="text-muted-foreground">
-              <span className="font-bold text-foreground">{truckCount}</span> similar trucks found over the last 6
-              months
+              <span className="font-bold text-foreground">{truckCount}</span> similar trucks found
             </p>
             <div className="text-sm text-muted-foreground mt-1">
               {filters.makes.length > 0 && (

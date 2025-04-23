@@ -453,7 +453,7 @@ export default function TruckList({
                 <TableRow key={truck.id} className="transition-colors duration-300">
                   <TableCell className="font-medium">
                     <div>
-                      {truck.make} {truck.model}
+                      {truck.manufacturer} {truck.model}
                     </div>
                     <div className="flex items-center gap-2 mt-1">
                       <Badge variant="outline" className="text-xs">
@@ -473,7 +473,7 @@ export default function TruckList({
                   </TableCell>
                   <TableCell>{truck.year}</TableCell>
                   <TableCell>{truck.mileage}</TableCell>
-                  <TableCell>${truck.retail_price}</TableCell>
+                  <TableCell>{truck.retail_price}</TableCell>
                   <TableCell>{truck.truck_location}</TableCell>
                   <TableCell className="text-right">
                     <Button 
@@ -482,7 +482,7 @@ export default function TruckList({
                       asChild
                     >
                       <a 
-                        href={truck.truckPaperUrl} 
+                        href={truck.url} 
                         target="_blank" 
                         rel="noopener noreferrer"
                       >

@@ -4,6 +4,12 @@ import { DynamoDBDocumentClient, ScanCommand } from "@aws-sdk/lib-dynamodb";
 interface FilterOptions {
   makes: Array<{ value: string; label: string }>;
   states: Array<{ value: string; label: string }>;
+  models: Record<string, Array<{ value: string; label: string }>>;
+  transmissions: Array<{ value: string; label: string }>;
+  transmissionManufacturers: Array<{ value: string; label: string }>;
+  engineManufacturers: Array<{ value: string; label: string }>;
+  engineModels: Record<string, Array<{ value: string; label: string }>>;
+  cabTypes: Array<{ value: string; label: string }>;
   minYear?: number;
   maxYear?: number;
   minPrice?: number;
@@ -37,13 +43,19 @@ export async function getFilterOptions(): Promise<FilterOptions> {
   try {
     const scanCommand = new ScanCommand({
       TableName: process.env.TRUCK_TABLE_NAME,
-      ProjectionExpression: "#manufacturer, #st, #price, #year, #mileage",
+      ProjectionExpression: "#manufacturer, #st, #price, #year, #mileage, #model, #transmission, #transmission_manufacturer, #engine_manufacturer, #engine_model, #cab",
       ExpressionAttributeNames: {
         "#manufacturer": "manufacturer",
         "#st": "state", // Using #st instead of #state as an alias
         "#price": "price",
         "#year": "year",
-        "#mileage": "mileage"
+        "#mileage": "mileage",
+        "#model": "model",
+        "#transmission": "transmission",
+        "#transmission_manufacturer": "transmission_manufacturer",
+        "#engine_manufacturer": "engine_manufacturer",
+        "#engine_model": "engine_model",
+        "#cab": "cab"
       }
     });
     
@@ -57,6 +69,12 @@ export async function getFilterOptions(): Promise<FilterOptions> {
     // Extract unique values for each option type
     const makes = new Set<string>();
     const states = new Set<string>();
+    const modelsByMake: Record<string, Set<string>> = {};
+    const transmissions = new Set<string>();
+    const transmissionManufacturers = new Set<string>();
+    const engineManufacturers = new Set<string>();
+    const engineModelsByMfr: Record<string, Set<string>> = {};
+    const cabTypes = new Set<string>();
     let minYear: number | undefined;
     let maxYear: number | undefined;
     let minPrice: number | undefined;
@@ -70,6 +88,14 @@ export async function getFilterOptions(): Promise<FilterOptions> {
       
       // Collect states
       if (item.state) states.add(item.state);
+      
+      // Collect models by manufacturer
+      if (item.manufacturer && item.model) {
+        if (!modelsByMake[item.manufacturer]) {
+          modelsByMake[item.manufacturer] = new Set<string>();
+        }
+        modelsByMake[item.manufacturer].add(item.model);
+      }
       
       // Track min/max year
       if (item.year) {
@@ -97,6 +123,18 @@ export async function getFilterOptions(): Promise<FilterOptions> {
           maxMileage = maxMileage === undefined ? mileage : Math.max(maxMileage, mileage);
         }
       }
+      
+      // Collect new filter options
+      if (item.transmission) transmissions.add(item.transmission);
+      if (item.transmission_manufacturer) transmissionManufacturers.add(item.transmission_manufacturer);
+      if (item.engine_manufacturer) engineManufacturers.add(item.engine_manufacturer);
+      if (item.engine_model) {
+        if (!engineModelsByMfr[item.engine_manufacturer]) {
+          engineModelsByMfr[item.engine_manufacturer] = new Set<string>();
+        }
+        engineModelsByMfr[item.engine_manufacturer].add(item.engine_model);
+      }
+      if (item.cab) cabTypes.add(item.cab);
     });
     
     // Convert sets to arrays of objects with value and label properties
@@ -110,10 +148,57 @@ export async function getFilterOptions(): Promise<FilterOptions> {
       label: state
     })).sort((a, b) => a.label.localeCompare(b.label));
     
+    // Convert modelsByMake to the required format
+    const formattedModels: Record<string, Array<{ value: string; label: string }>> = {};
+    
+    Object.entries(modelsByMake).forEach(([make, modelsSet]) => {
+      formattedModels[make] = Array.from(modelsSet).map(model => ({
+        value: model.toLowerCase(),
+        label: model
+      })).sort((a, b) => a.label.localeCompare(b.label));
+    });
+    
+    // Format the new option types
+    const formattedTransmissions = Array.from(transmissions).map(transmission => ({
+      value: transmission.toLowerCase(),
+      label: transmission
+    })).sort((a, b) => a.label.localeCompare(b.label));
+    
+    const formattedTransmissionManufacturers = Array.from(transmissionManufacturers).map(manufacturer => ({
+      value: manufacturer.toLowerCase(),
+      label: manufacturer
+    })).sort((a, b) => a.label.localeCompare(b.label));
+    
+    const formattedEngineManufacturers = Array.from(engineManufacturers).map(manufacturer => ({
+      value: manufacturer.toLowerCase(),
+      label: manufacturer
+    })).sort((a, b) => a.label.localeCompare(b.label));
+    
+    // Convert engineModelsByMfr to the required format
+    const formattedEngineModels: Record<string, Array<{ value: string; label: string }>> = {};
+    
+    Object.entries(engineModelsByMfr).forEach(([mfr, modelsSet]) => {
+      formattedEngineModels[mfr] = Array.from(modelsSet).map(model => ({
+        value: model.toLowerCase(),
+        label: model
+      })).sort((a, b) => a.label.localeCompare(b.label));
+    });
+    
+    const formattedCabTypes = Array.from(cabTypes).map(cab => ({
+      value: cab.toLowerCase(),
+      label: cab
+    })).sort((a, b) => a.label.localeCompare(b.label));
+    
     // Update cache
     optionsCache = {
       makes: formattedMakes,
       states: formattedStates,
+      models: formattedModels,
+      transmissions: formattedTransmissions,
+      transmissionManufacturers: formattedTransmissionManufacturers,
+      engineManufacturers: formattedEngineManufacturers,
+      engineModels: formattedEngineModels,
+      cabTypes: formattedCabTypes,
       minYear,
       maxYear,
       minPrice,
