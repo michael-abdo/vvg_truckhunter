@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -15,71 +15,21 @@ import { Badge } from "@/components/ui/badge"
 import TruckList from "./truck-list"
 import PriceChart from "./price-chart"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-
-// Mock data for makes and models of semi trucks
-const truckMakes = [
-  { value: "freightliner", label: "Freightliner" },
-  { value: "peterbilt", label: "Peterbilt" },
-  { value: "kenworth", label: "Kenworth" },
-  { value: "volvo", label: "Volvo" },
-  { value: "international", label: "International" },
-  { value: "mack", label: "Mack" },
-  { value: "western-star", label: "Western Star" },
-]
-
-const truckModels = {
-  freightliner: [
-    { value: "cascadia", label: "Cascadia" },
-    { value: "coronado", label: "Coronado" },
-    { value: "columbia", label: "Columbia" },
-    { value: "m2-106", label: "M2 106" },
-    { value: "m2-112", label: "M2 112" },
-  ],
-  peterbilt: [
-    { value: "389", label: "389" },
-    { value: "379", label: "379" },
-    { value: "579", label: "579" },
-    { value: "567", label: "567" },
-    { value: "387", label: "387" },
-  ],
-  kenworth: [
-    { value: "t680", label: "T680" },
-    { value: "t800", label: "T800" },
-    { value: "w900", label: "W900" },
-    { value: "t660", label: "T660" },
-    { value: "t700", label: "T700" },
-  ],
-  volvo: [
-    { value: "vnl-300", label: "VNL 300" },
-    { value: "vnl-670", label: "VNL 670" },
-    { value: "vnl-780", label: "VNL 780" },
-    { value: "vnl-860", label: "VNL 860" },
-    { value: "vnr", label: "VNR" },
-  ],
-  international: [
-    { value: "prostar", label: "ProStar" },
-    { value: "lonestar", label: "LoneStar" },
-    { value: "lt", label: "LT Series" },
-    { value: "hx", label: "HX Series" },
-    { value: "rv", label: "RV Series" },
-  ],
-  mack: [
-    { value: "anthem", label: "Anthem" },
-    { value: "pinnacle", label: "Pinnacle" },
-    { value: "granite", label: "Granite" },
-    { value: "ch", label: "CH" },
-    { value: "cl", label: "CL" },
-  ],
-  "western-star": [
-    { value: "4900", label: "4900" },
-    { value: "5700", label: "5700" },
-    { value: "4800", label: "4800" },
-    { value: "4700", label: "4700" },
-    { value: "6900", label: "6900" },
-  ],
-}
+import { queryVinInformation } from "@/lib/dynamodb"
+import { states } from "../app/lib/states"
 
 export default function TruckFinder() {
+  // State for dropdown options from database
+  const [truckMakes, setTruckMakes] = useState<Array<{ value: string; label: string }>>([])
+  const [truckModels, setTruckModels] = useState<Record<string, Array<{ value: string; label: string }>>>({})
+  const [transmissionTypes, setTransmissionTypes] = useState<Array<{ value: string; label: string }>>([])
+  const [transmissionManufacturers, setTransmissionManufacturers] = useState<Array<{ value: string; label: string }>>([])
+  const [engineManufacturers, setEngineManufacturers] = useState<Array<{ value: string; label: string }>>([])
+  const [engineModels, setEngineModels] = useState<Record<string, Array<{ value: string; label: string }>>>({})
+  const [cabTypes, setCabTypes] = useState<Array<{ value: string; label: string }>>([])
+  const [loading, setLoading] = useState(true)
+
+  // Existing state variables
   const [selectedMakes, setSelectedMakes] = useState<string[]>([])
   const [selectedModels, setSelectedModels] = useState<string[]>([])
   const [makesOpen, setMakesOpen] = useState(false)
@@ -111,79 +61,253 @@ export default function TruckFinder() {
   // Available models based on selected makes
   const availableModels = selectedMakes.flatMap((make) => truckModels[make] || [])
 
-  const handleSearch = () => {
-    // Update filters with current values
-    setFilters({
-      makes: selectedMakes,
-      models: selectedModels,
+  // Add new state variables for the new filters
+  const [horsepower, setHorsepower] = useState(450)
+  const [horsepowerDelta, setHorsepowerDelta] = useState(50)
+  const [selectedTransmissions, setSelectedTransmissions] = useState<string[]>([])
+  const [selectedTransMfrs, setSelectedTransMfrs] = useState<string[]>([])
+  const [selectedEngineMfrs, setSelectedEngineMfrs] = useState<string[]>([])
+  const [selectedEngineModels, setSelectedEngineModels] = useState<string[]>([])
+  const [selectedCabTypes, setSelectedCabTypes] = useState<string[]>([])
+  const [transmissionsOpen, setTransmissionsOpen] = useState(false)
+  const [transMfrsOpen, setTransMfrsOpen] = useState(false)
+  const [engineMfrsOpen, setEngineMfrsOpen] = useState(false)
+  const [engineModelsOpen, setEngineModelsOpen] = useState(false)
+  const [cabTypesOpen, setCabTypesOpen] = useState(false)
+
+  // Update available engine models based on selected engine manufacturers
+  const availableEngineModels = selectedEngineMfrs.flatMap((mfr) => engineModels[mfr] || [])
+
+  // Add state variables for the new filters
+  const [selectedStates, setSelectedStates] = useState<string[]>([])
+  const [statesOpen, setStatesOpen] = useState(false)
+
+  // Get the display names for selected makes and models from dynamically loaded data
+  const selectedMakeLabels = selectedMakes.map((make) => 
+    truckMakes.find((m) => m.value === make)?.label || make
+  )
+  
+  const selectedModelLabels = selectedModels.map((model) => {
+    for (const make in truckModels) {
+      const found = truckModels[make]?.find((m) => m.value === model)
+      if (found) return found.label
+    }
+    return model
+  })
+
+  // Fetch filter options from database on component mount
+  useEffect(() => {
+    const fetchFilterOptions = async () => {
+      try {
+        setLoading(true)
+        
+        console.log("Fetching filter options from API...");
+        
+        // Fetch all filter options from the database
+        const response = await fetch('/api/filter-options')
+        const data = await response.json()
+        
+        // Log the complete response for debugging
+        console.log("Filter options API response:", data);
+        
+        if (data.success) {
+          // Log each set of options to verify what's being received
+          console.log("Makes:", data.makes || []);
+          console.log("Models:", data.models || {});
+          console.log("Transmission Types:", data.transmissionTypes || []);
+          console.log("Transmission Manufacturers:", data.transmissionManufacturers || []);
+          console.log("Engine Manufacturers:", data.engineManufacturers || []);
+          console.log("Engine Models:", data.engineModels || {});
+          console.log("Cab Types:", data.cabTypes || []);
+          
+          // Set all dropdown options from the database
+          setTruckMakes(data.makes.map(make => ({ 
+            value: make.label,
+            label: make.label 
+          })) || [])
+          setTruckModels(data.models || {})
+          setTransmissionTypes(data.transmissionTypes || [])
+          setTransmissionManufacturers(data.transmissionManufacturers || [])
+          setEngineManufacturers(data.engineManufacturers || [])
+          setEngineModels(data.engineModels || {})
+          setCabTypes(data.cabTypes || [])
+        } else {
+          console.error("Failed to fetch filter options:", data.error)
+        }
+      } catch (error) {
+        console.error("Error fetching filter options:", error)
+      } finally {
+        setLoading(false)
+      }
+    }
+    
+    fetchFilterOptions()
+  }, [])
+  
+  // Update the handleSearch function to get actual count from API
+  const handleSearch = async () => {
+    // Use labels for makes and models but keep original values (codes) for states
+    const selectedMakeLabels = selectedMakes.map(
+      make => truckMakes.find(m => m.value === make)?.label || make
+    )
+    
+    const newFilters = {
+      makes: selectedMakeLabels, // Send labels instead of values
+      models: selectedModels.map(model => {
+        for (const make in truckModels) {
+          const found = truckModels[make]?.find(m => m.value === model)
+          if (found) return found.label
+        }
+        return model
+      }),
       miles: { value: miles, delta: milesDelta },
       year: { value: year, delta: yearDelta },
-    })
-
+      horsepower: { value: horsepower, delta: horsepowerDelta },
+      transmission: selectedTransmissions.map(trans => 
+        transmissionTypes.find(t => t.value === trans)?.label || trans
+      ),
+      transmissionManufacturer: selectedTransMfrs.map(mfr => 
+        transmissionManufacturers.find(m => m.value === mfr)?.label || mfr
+      ),
+      engineManufacturer: selectedEngineMfrs.map(mfr => 
+        engineManufacturers.find(m => m.value === mfr)?.label || mfr
+      ),
+      engineModel: selectedEngineModels.map(model => {
+        for (const mfr in engineModels) {
+          const found = engineModels[mfr]?.find(m => m.value === model)
+          if (found) return found.label
+        }
+        return model
+      }),
+      cab: selectedCabTypes.map(cab => 
+        cabTypes.find(c => c.value === cab)?.label || cab
+      ),
+      states: selectedStates, // Send the state codes directly, not the labels
+    }
+    
+    // Log the filters being sent to the API
+    console.log("Sending filters to API:", JSON.stringify(newFilters, null, 2));
+    
+    setFilters(newFilters)
     setSearchPerformed(true)
     setSearchCount((prev) => prev + 1)
     setRefreshTrigger((prev) => prev + 1)
-
-    // Calculate a somewhat realistic truck count based on filter breadth
-    const makeMultiplier = selectedMakes.length > 0 ? selectedMakes.length : 6
-    const modelMultiplier = selectedModels.length > 0 ? selectedModels.length : 4
-    const yearRange = yearDelta * 2
-    const milesRangeFactor = milesDelta / 100000
-
-    const baseCount = 5 + Math.floor(Math.random() * 10)
-    const calculatedCount = Math.floor(
-      (baseCount * makeMultiplier * modelMultiplier * yearRange * milesRangeFactor) / 10,
-    )
-
-    setTruckCount(Math.max(calculatedCount, 1))
-  }
-
-  const handleVinSearch = () => {
-    // Simulate API call to search for VIN
-    if (vin && vin.length >= 17) {
-      const found = Math.random() > 0.3;
-      setVinMatchFound(found);
+    
+    try {
+      console.log("Fetching truck count from API...");
       
-      if (found) {
-        // Randomly select a make
-        const randomMake = truckMakes[Math.floor(Math.random() * truckMakes.length)].value;
-        
-        // Select a model that actually belongs to that make
-        const availableModels = truckModels[randomMake] || [];
-        const randomModel = availableModels.length > 0 
-          ? availableModels[Math.floor(Math.random() * availableModels.length)].value
-          : "unknown";
-        
-        // Create the mock specs with the correct make/model
-        const mockSpecs = {
-          make: randomMake,
-          model: randomModel,
-          year: 2017 + Math.floor(Math.random() * 5),
-          miles: 250000 + Math.floor(Math.random() * 500000),
-          trim: "AeroCab Sleeper",
-          engine: "Cummins X15 15L",
-          transmission: "Eaton Fuller 13-speed",
-          drivetrain: "6x4",
-          exteriorColor: "White",
-          interiorColor: "Gray",
-          sleeper: "76-inch High-Roof",
-          axleRatio: "3.42",
-          suspension: "Air Ride",
-          wheelbase: "240 inches"
-        };
-        
-        setVinSpecs(mockSpecs);
-        
-        // Pre-fill the search criteria
-        setSelectedMakes([mockSpecs.make]);
-        setSelectedModels([mockSpecs.model]);
-        setYear(mockSpecs.year);
-        setMiles(mockSpecs.miles);
+      // Get the count of matching trucks from the API
+      const countResponse = await fetch('/api/trucks/count', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ filters: newFilters }),
+      })
+      
+      const countData = await countResponse.json()
+      
+      // Log the complete count response
+      console.log("Truck count API response:", countData);
+      
+      if (countData.success) {
+        console.log("Truck count:", countData.count);
+        setTruckCount(countData.count)
       } else {
-        setVinSpecs(null);
+        console.error("Failed to get truck count:", countData.error);
+        // If API call fails, set a default count
+        setTruckCount(0)
       }
       
-      setVinSearchPerformed(true);
+      // Also log the response from the main trucks API call
+      console.log("Fetching truck data from main API...");
+      const trucksResponse = await fetch('/api/trucks', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ filters: newFilters }),
+      });
+      
+      const trucksData = await trucksResponse.json();
+      console.log("Main trucks API response:", trucksData);
+      console.log("Number of trucks returned:", trucksData.trucks ? trucksData.trucks.length : 0);
+      
+      if (trucksData.trucks && trucksData.trucks.length > 0) {
+        console.log("First truck example:", trucksData.trucks[0]);
+      }
+      
+    } catch (error) {
+      console.error("Error getting truck data:", error);
+      setTruckCount(0)
+    }
+  }
+
+  // Update the handleVinSearch function
+  const handleVinSearch = async () => {
+    if (vin && vin.length >= 17) {
+      try {
+        setVinSearchPerformed(false); // Reset while searching
+        
+        console.log(`Searching for VIN: ${vin}`);
+        
+        // Call the server-side API endpoint
+        const response = await fetch(`/api/vin?vin=${vin}`);
+        const data = await response.json();
+        
+        // Log the full response for debugging
+        console.log("VIN API Response:", data);
+        
+        if (data.success && data.truck) {
+          const truckData = data.truck;
+          console.log("VIN match found:", truckData);
+          setVinMatchFound(true);
+          
+          // Parse the mileage string to a number by removing commas and 'mi' suffix
+          let mileageValue = 0;
+          if (truckData.mileage) {
+            // Remove commas and non-numeric characters, then parse as integer
+            mileageValue = parseInt(truckData.mileage.replace(/,/g, '').replace(/[^0-9]/g, ''));
+          }
+          
+          // Map the DynamoDB data to the vinSpecs format with correct field names and fallbacks
+          const specs = {
+            make: truckData.manufacturer || "",
+            model: truckData.model || "",
+            year: truckData.year ? parseInt(truckData.year) : 0, // Ensure year is a number
+            miles: mileageValue, // Use the parsed mileage value
+            trim: truckData.trim || "",
+            engine: truckData.engine_model || "",
+            transmission: truckData.transmission || "",
+            exteriorColor: truckData.color || "",
+            interiorColor: truckData.seats_upholstery || "",
+            axleRatio: truckData.ratio || "",
+            suspension: truckData.suspension || "",
+            wheelbase: truckData.wheelbase || ""
+          };
+          
+          console.log("Mapped specs:", specs);
+          setVinSpecs(specs);
+          
+          // Only pre-fill the search criteria if values exist
+          if (specs.make) setSelectedMakes([specs.make.toLowerCase()]);
+          if (specs.model) setSelectedModels([specs.model.toLowerCase()]);
+          if (specs.year) setYear(specs.year);
+          if (specs.miles) setMiles(specs.miles);
+        } else {
+          console.log("No VIN match found");
+          setVinMatchFound(false);
+          setVinSpecs(null);
+        }
+      } catch (error) {
+        console.error("Error searching VIN:", error);
+        setVinMatchFound(false);
+        setVinSpecs(null);
+      } finally {
+        setVinSearchPerformed(true);
+      }
+    } else {
+      console.warn("Invalid VIN length:", vin.length);
     }
   }
 
@@ -204,17 +328,16 @@ export default function TruckFinder() {
     setter(Math.max(0, value - decrement))
   }
 
-  // Get the display names for selected makes and models
-  const selectedMakeLabels = selectedMakes.map((make) => truckMakes.find((m) => m.value === make)?.label || make)
-
-  const selectedModelLabels = selectedModels.map((model) => {
-    for (const make in truckModels) {
-      const found = truckModels[make].find((m) => m.value === model)
-      if (found) return found.label
-    }
-    return model
-  })
-
+  // Render loading state if options are still loading
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center p-12">
+        <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full"></div>
+        <span className="ml-3">Loading filter options...</span>
+      </div>
+    )
+  }
+  
   return (
     <div className="space-y-8">
       <Card>
@@ -449,6 +572,451 @@ export default function TruckFinder() {
                     </div>
                   </div>
                 </div>
+
+                {/* Horsepower */}
+                <div className="space-y-2">
+                  <Label htmlFor="horsepower">Horsepower</Label>
+                  <div className="flex items-center space-x-2">
+                    <Button variant="outline" size="icon" onClick={() => decrementValue(setHorsepower, horsepower, 25)}>
+                      <Minus className="h-4 w-4" />
+                    </Button>
+                    <Input
+                      id="horsepower"
+                      type="number"
+                      value={horsepower}
+                      onChange={(e) => setHorsepower(Number.parseInt(e.target.value) || 0)}
+                      className="text-center"
+                    />
+                    <Button variant="outline" size="icon" onClick={() => incrementValue(setHorsepower, horsepower, 25)}>
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <div className="flex items-center justify-between mt-2">
+                    <span className="text-xs text-muted-foreground">Range: ±</span>
+                    <div className="flex items-center space-x-2">
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-6 w-6"
+                        onClick={() => decrementValue(setHorsepowerDelta, horsepowerDelta, 25)}
+                      >
+                        <Minus className="h-3 w-3" />
+                      </Button>
+                      <span className="text-xs font-medium">{horsepowerDelta} HP</span>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-6 w-6"
+                        onClick={() => incrementValue(setHorsepowerDelta, horsepowerDelta, 25)}
+                      >
+                        <Plus className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Transmission Type */}
+                <div className="space-y-2">
+                  <Label htmlFor="transmission">Transmission</Label>
+                  <Popover open={transmissionsOpen} onOpenChange={setTransmissionsOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={transmissionsOpen}
+                        className="w-full justify-between"
+                      >
+                        {selectedTransmissions.length > 0 ? `${selectedTransmissions.length} selected` : "Select transmission..."}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-full p-0">
+                      <Command>
+                        <CommandInput placeholder="Search transmissions..." />
+                        <CommandList>
+                          <CommandEmpty>No transmission found.</CommandEmpty>
+                          <CommandGroup>
+                            {transmissionTypes.map((transmission) => (
+                              <CommandItem
+                                key={transmission.value}
+                                value={transmission.value}
+                                onSelect={() => {
+                                  setSelectedTransmissions(
+                                    selectedTransmissions.includes(transmission.value)
+                                      ? selectedTransmissions.filter((t) => t !== transmission.value)
+                                      : [...selectedTransmissions, transmission.value],
+                                  )
+                                }}
+                              >
+                                <Check
+                                  className={cn(
+                                    "mr-2 h-4 w-4",
+                                    selectedTransmissions.includes(transmission.value) ? "opacity-100" : "opacity-0",
+                                  )}
+                                />
+                                {transmission.label}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                  {selectedTransmissions.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {selectedTransmissions.map((trans) => {
+                        const transLabel = transmissionTypes.find((t) => t.value === trans)?.label
+                        return (
+                          <Badge key={trans} variant="secondary" className="text-xs">
+                            {transLabel}
+                            <button
+                              className="ml-1 text-xs"
+                              onClick={() => setSelectedTransmissions(selectedTransmissions.filter((t) => t !== trans))}
+                            >
+                              ×
+                            </button>
+                          </Badge>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Transmission Manufacturer */}
+                <div className="space-y-2">
+                  <Label htmlFor="trans-mfr">Transmission Manufacturer</Label>
+                  <Popover open={transMfrsOpen} onOpenChange={setTransMfrsOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={transMfrsOpen}
+                        className="w-full justify-between"
+                      >
+                        {selectedTransMfrs.length > 0 ? `${selectedTransMfrs.length} selected` : "Select manufacturer..."}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-full p-0">
+                      <Command>
+                        <CommandInput placeholder="Search manufacturers..." />
+                        <CommandList>
+                          <CommandEmpty>No manufacturer found.</CommandEmpty>
+                          <CommandGroup>
+                            {transmissionManufacturers.map((mfr) => (
+                              <CommandItem
+                                key={mfr.value}
+                                value={mfr.value}
+                                onSelect={() => {
+                                  setSelectedTransMfrs(
+                                    selectedTransMfrs.includes(mfr.value)
+                                      ? selectedTransMfrs.filter((m) => m !== mfr.value)
+                                      : [...selectedTransMfrs, mfr.value],
+                                  )
+                                }}
+                              >
+                                <Check
+                                  className={cn(
+                                    "mr-2 h-4 w-4",
+                                    selectedTransMfrs.includes(mfr.value) ? "opacity-100" : "opacity-0",
+                                  )}
+                                />
+                                {mfr.label}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                  {selectedTransMfrs.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {selectedTransMfrs.map((mfr) => {
+                        const mfrLabel = transmissionManufacturers.find((m) => m.value === mfr)?.label
+                        return (
+                          <Badge key={mfr} variant="secondary" className="text-xs">
+                            {mfrLabel}
+                            <button
+                              className="ml-1 text-xs"
+                              onClick={() => setSelectedTransMfrs(selectedTransMfrs.filter((m) => m !== mfr))}
+                            >
+                              ×
+                            </button>
+                          </Badge>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Engine Manufacturer */}
+                <div className="space-y-2">
+                  <Label htmlFor="engine-mfr">Engine Manufacturer</Label>
+                  <Popover open={engineMfrsOpen} onOpenChange={setEngineMfrsOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={engineMfrsOpen}
+                        className="w-full justify-between"
+                      >
+                        {selectedEngineMfrs.length > 0 ? `${selectedEngineMfrs.length} selected` : "Select manufacturer..."}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-full p-0">
+                      <Command>
+                        <CommandInput placeholder="Search manufacturers..." />
+                        <CommandList>
+                          <CommandEmpty>No manufacturer found.</CommandEmpty>
+                          <CommandGroup>
+                            {engineManufacturers.map((mfr) => (
+                              <CommandItem
+                                key={mfr.value}
+                                value={mfr.value}
+                                onSelect={() => {
+                                  setSelectedEngineMfrs(
+                                    selectedEngineMfrs.includes(mfr.value)
+                                      ? selectedEngineMfrs.filter((m) => m !== mfr.value)
+                                      : [...selectedEngineMfrs, mfr.value],
+                                  )
+                                }}
+                              >
+                                <Check
+                                  className={cn(
+                                    "mr-2 h-4 w-4",
+                                    selectedEngineMfrs.includes(mfr.value) ? "opacity-100" : "opacity-0",
+                                  )}
+                                />
+                                {mfr.label}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                  {selectedEngineMfrs.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {selectedEngineMfrs.map((mfr) => {
+                        const mfrLabel = engineManufacturers.find((m) => m.value === mfr)?.label
+                        return (
+                          <Badge key={mfr} variant="secondary" className="text-xs">
+                            {mfrLabel}
+                            <button
+                              className="ml-1 text-xs"
+                              onClick={() => setSelectedEngineMfrs(selectedEngineMfrs.filter((m) => m !== mfr))}
+                            >
+                              ×
+                            </button>
+                          </Badge>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Engine Model */}
+                <div className="space-y-2">
+                  <Label htmlFor="engine-model">Engine Model</Label>
+                  <Popover open={engineModelsOpen} onOpenChange={setEngineModelsOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={engineModelsOpen}
+                        className="w-full justify-between"
+                        disabled={availableEngineModels.length === 0}
+                      >
+                        {selectedEngineModels.length > 0 ? `${selectedEngineModels.length} selected` : "Select model..."}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-full p-0">
+                      <Command>
+                        <CommandInput placeholder="Search models..." />
+                        <CommandList>
+                          <CommandEmpty>No model found.</CommandEmpty>
+                          <CommandGroup>
+                            {availableEngineModels.map((model) => (
+                              <CommandItem
+                                key={model.value}
+                                value={model.value}
+                                onSelect={() => {
+                                  setSelectedEngineModels(
+                                    selectedEngineModels.includes(model.value)
+                                      ? selectedEngineModels.filter((m) => m !== model.value)
+                                      : [...selectedEngineModels, model.value],
+                                  )
+                                }}
+                              >
+                                <Check
+                                  className={cn(
+                                    "mr-2 h-4 w-4",
+                                    selectedEngineModels.includes(model.value) ? "opacity-100" : "opacity-0",
+                                  )}
+                                />
+                                {model.label}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                  {selectedEngineModels.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {selectedEngineModels.map((model) => {
+                        const modelLabel = availableEngineModels.find((m) => m.value === model)?.label
+                        return (
+                          <Badge key={model} variant="secondary" className="text-xs">
+                            {modelLabel}
+                            <button
+                              className="ml-1 text-xs"
+                              onClick={() => setSelectedEngineModels(selectedEngineModels.filter((m) => m !== model))}
+                            >
+                              ×
+                            </button>
+                          </Badge>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Cab Type */}
+                <div className="space-y-2">
+                  <Label htmlFor="cab-type">Cab Type</Label>
+                  <Popover open={cabTypesOpen} onOpenChange={setCabTypesOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={cabTypesOpen}
+                        className="w-full justify-between"
+                      >
+                        {selectedCabTypes.length > 0 ? `${selectedCabTypes.length} selected` : "Select cab type..."}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-full p-0">
+                      <Command>
+                        <CommandInput placeholder="Search cab types..." />
+                        <CommandList>
+                          <CommandEmpty>No cab type found.</CommandEmpty>
+                          <CommandGroup>
+                            {cabTypes.map((cab) => (
+                              <CommandItem
+                                key={cab.value}
+                                value={cab.value}
+                                onSelect={() => {
+                                  setSelectedCabTypes(
+                                    selectedCabTypes.includes(cab.value)
+                                      ? selectedCabTypes.filter((c) => c !== cab.value)
+                                      : [...selectedCabTypes, cab.value],
+                                  )
+                                }}
+                              >
+                                <Check
+                                  className={cn(
+                                    "mr-2 h-4 w-4",
+                                    selectedCabTypes.includes(cab.value) ? "opacity-100" : "opacity-0",
+                                  )}
+                                />
+                                {cab.label}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                  {selectedCabTypes.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {selectedCabTypes.map((cab) => {
+                        const cabLabel = cabTypes.find((c) => c.value === cab)?.label
+                        return (
+                          <Badge key={cab} variant="secondary" className="text-xs">
+                            {cabLabel}
+                            <button
+                              className="ml-1 text-xs"
+                              onClick={() => setSelectedCabTypes(selectedCabTypes.filter((c) => c !== cab))}
+                            >
+                              ×
+                            </button>
+                          </Badge>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* State */}
+                <div className="space-y-2">
+                  <Label htmlFor="state">State</Label>
+                  <Popover open={statesOpen} onOpenChange={setStatesOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={statesOpen}
+                        className="w-full justify-between"
+                      >
+                        {selectedStates.length > 0 ? `${selectedStates.length} selected` : "Select states..."}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-full p-0">
+                      <Command>
+                        <CommandInput placeholder="Search states..." />
+                        <CommandList>
+                          <CommandEmpty>No state found.</CommandEmpty>
+                          <CommandGroup>
+                            {states.map((state) => (
+                              <CommandItem
+                                key={state.value}
+                                value={state.value}
+                                onSelect={() => {
+                                  setSelectedStates(
+                                    selectedStates.includes(state.value)
+                                      ? selectedStates.filter((s) => s !== state.value)
+                                      : [...selectedStates, state.value],
+                                  )
+                                }}
+                              >
+                                <Check
+                                  className={cn(
+                                    "mr-2 h-4 w-4",
+                                    selectedStates.includes(state.value) ? "opacity-100" : "opacity-0",
+                                  )}
+                                />
+                                {state.label}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                  {selectedStates.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {selectedStates.map((stateValue) => {
+                        const stateLabel = states.find((s) => s.value === stateValue)?.label
+                        return (
+                          <Badge key={stateValue} variant="secondary" className="text-xs">
+                            {stateLabel}
+                            <button
+                              className="ml-1 text-xs"
+                              onClick={() => setSelectedStates(selectedStates.filter((s) => s !== stateValue))}
+                            >
+                              ×
+                            </button>
+                          </Badge>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
               <Button className="w-full mt-6" onClick={handleSearch}>
                 Find Similar Trucks
@@ -492,37 +1060,31 @@ export default function TruckFinder() {
                             <div className="grid grid-cols-2 gap-2">
                               <div>
                                 <p className="text-sm font-medium">Make</p>
-                                <p className="text-sm">{truckMakes.find(m => m.value === vinSpecs.make)?.label || vinSpecs.make}</p>
+                                <p className="text-sm">{truckMakes.find(m => m.value === vinSpecs.make)?.label || vinSpecs.make || 'N/A'}</p>
                               </div>
                               <div>
                                 <p className="text-sm font-medium">Model</p>
                                 <p className="text-sm">
-                                  {truckModels[vinSpecs.make]?.find(m => m.value === vinSpecs.model)?.label || vinSpecs.model}
+                                  {truckModels[vinSpecs.make]?.find(m => m.value === vinSpecs.model)?.label || vinSpecs.model || 'N/A'}
                                 </p>
                               </div>
                               <div>
                                 <p className="text-sm font-medium">Year</p>
-                                <p className="text-sm">{vinSpecs.year}</p>
+                                <p className="text-sm">{vinSpecs.year || 'N/A'}</p>
                               </div>
                               <div>
                                 <p className="text-sm font-medium">Miles</p>
-                                <p className="text-sm">{vinSpecs.miles.toLocaleString()}</p>
+                                <p className="text-sm">
+                                  {vinSpecs.miles ? vinSpecs.miles.toLocaleString() : 'N/A'}
+                                </p>
                               </div>
                               <div>
                                 <p className="text-sm font-medium">Engine</p>
-                                <p className="text-sm">{vinSpecs.engine}</p>
+                                <p className="text-sm">{vinSpecs.engine || 'N/A'}</p>
                               </div>
                               <div>
                                 <p className="text-sm font-medium">Transmission</p>
-                                <p className="text-sm">{vinSpecs.transmission}</p>
-                              </div>
-                              <div>
-                                <p className="text-sm font-medium">Sleeper</p>
-                                <p className="text-sm">{vinSpecs.sleeper}</p>
-                              </div>
-                              <div>
-                                <p className="text-sm font-medium">Drivetrain</p>
-                                <p className="text-sm">{vinSpecs.drivetrain}</p>
+                                <p className="text-sm">{vinSpecs.transmission || 'N/A'}</p>
                               </div>
                             </div>
                             
@@ -597,6 +1159,43 @@ export default function TruckFinder() {
                   {(filters.miles.value + filters.miles.delta).toLocaleString()}
                 </span>
               </div>
+              
+              {/* Display additional filters when they are used */}
+              {filters.horsepower && (
+                <div className="mt-1">
+                  <span>
+                    Horsepower: {filters.horsepower.value - filters.horsepower.delta} - {filters.horsepower.value + filters.horsepower.delta} HP
+                  </span>
+                </div>
+              )}
+              
+              {filters.transmission && filters.transmission.length > 0 && (
+                <div className="flex flex-wrap gap-1 items-center mt-1">
+                  <span>Transmission:</span>
+                  {filters.transmission.map((t) => {
+                    const label = transmissionTypes.find((type) => type.value === t)?.label;
+                    return (
+                      <Badge key={t} variant="secondary" className="text-xs">
+                        {label}
+                      </Badge>
+                    );
+                  })}
+                </div>
+              )}
+
+              {filters.states && filters.states.length > 0 && (
+                <div className="flex flex-wrap gap-1 items-center mt-1">
+                  <span>States:</span>
+                  {filters.states.map((stateCode) => {
+                    const stateInfo = states.find((s) => s.value === stateCode);
+                    return (
+                      <Badge key={stateCode} variant="secondary" className="text-xs">
+                        {stateInfo?.value || stateCode}
+                      </Badge>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
 

@@ -6,8 +6,43 @@ import { Button } from "@/components/ui/button"
 import { ChevronRight } from "lucide-react"
 import { useState, useEffect } from "react"
 
+// Truck type definition
+interface Truck {
+  id: number | string;
+  make: string;
+  model: string;
+  year: number;
+  miles: number;
+  price: number;
+  location: string;
+  condition: string;
+  daysListed: number;
+  truckPaperUrl: string;
+  horsepower?: string;
+  transmission?: string;
+  transmissionManufacturer?: string;
+  engineManufacturer?: string;
+  engineModel?: string;
+  cab?: string;
+}
+
+// Filter type definition
+interface TruckFilters {
+  makes?: string[];
+  models?: string[];
+  year?: { value: number; delta: number };
+  miles?: { value: number; delta: number };
+  horsepower?: { value: number; delta: number };
+  transmission?: string[];
+  transmissionManufacturer?: string[];
+  engineManufacturer?: string[];
+  engineModel?: string[];
+  cab?: string[];
+  states?: string[];
+}
+
 // Updated mock data for semi truck makes and models
-const truckMakeModels = {
+const truckMakeModels: Record<string, Array<{ value: string; label: string }>> = {
   freightliner: [
     { value: "cascadia", label: "Cascadia" },
     { value: "coronado", label: "Coronado" },
@@ -74,7 +109,7 @@ const locations = [
 ]
 
 // Function to generate a random truck based on filters
-const generateRandomTruck = (id, filters) => {
+const generateRandomTruck = (id: number, filters: TruckFilters): Truck => {
   // Default values if no filters are applied - updated for semi trucks
   let makes = Object.keys(truckMakeModels)
   let models = []
@@ -175,84 +210,335 @@ const generateRandomTruck = (id, filters) => {
     location,
     condition,
     daysListed,
-    truckPaperUrl: truckPaperUrls[Math.floor(Math.random() * truckPaperUrls.length)]
+    truckPaperUrl: truckPaperUrls[Math.floor(Math.random() * truckPaperUrls.length)],
+    horsepower: "",
+    transmission: "",
+    transmissionManufacturer: "",
+    engineManufacturer: "",
+    engineModel: "",
+    cab: ""
   }
 }
 
-export default function TruckList({ refreshTrigger = 0, filters = {} }) {
-  const [trucks, setTrucks] = useState([])
+interface TruckListProps {
+  refreshTrigger?: number;
+  filters?: TruckFilters;
+}
 
-  // Effect to refresh trucks when refreshTrigger changes
+export default function TruckList({ refreshTrigger = 0, filters = {} }: TruckListProps) {
+  const [trucks, setTrucks] = useState<Truck[]>([])
+  const [allTrucks, setAllTrucks] = useState<Truck[]>([]) // Store all trucks for client-side pagination
+  const [loading, setLoading] = useState<boolean>(false)
+  const [error, setError] = useState<string | null>(null)
+  
+  // Add pagination state
+  const [currentPage, setCurrentPage] = useState<number>(1)
+  const [pageSize, setPageSize] = useState<number>(5)
+  const [totalItems, setTotalItems] = useState<number>(0)
+  const [totalPages, setTotalPages] = useState<number>(1)
+
+  // Effect to fetch trucks from API when refreshTrigger changes
   useEffect(() => {
-    // Generate some new random trucks based on filters
-    const newTrucks = Array(5)
-      .fill(null)
-      .map((_, index) => generateRandomTruck(index + 1, filters))
-
-    setTrucks(newTrucks)
-
-    // Add a visual indication that the data has changed
-    setTimeout(() => {
-      const rows = document.querySelectorAll("tbody tr")
-      rows.forEach((row) => {
-        row.classList.add("bg-green-50")
+    const fetchTrucks = async () => {
+      try {
+        setLoading(true);
+        
+        // Call the server-side API endpoint
+        const response = await fetch('/api/trucks', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ 
+            filters,
+            // Send pagination info to API, but be prepared to handle client-side pagination
+            pagination: {
+              page: currentPage,
+              pageSize: pageSize
+            }
+          }),
+        });
+        
+        const data = await response.json();
+        
+        if (data.success && data.trucks && data.trucks.length > 0) {
+          // Map the fetched trucks to the expected format
+          const formattedTrucks: Truck[] = data.trucks.map((truck: any, index: number) => ({
+            id: truck.id || index + 1,
+            make: truck.manufacturer || "",
+            model: truck.model || "",
+            year: truck.year || 0,
+            miles: truck.mileage || 0,
+            price: truck.retail_price || 0,
+            location: truck.truck_location || "Unknown",
+            condition: truck.condition || "Unknown",
+            daysListed: truck.daysListed || Math.floor(Math.random() * 45) + 1,
+            truckPaperUrl: truck.url || "#",
+            horsepower: truck.horsepower || "",
+            transmission: truck.transmission || "",
+            transmissionManufacturer: truck.transmission_manufacturer || "",
+            engineManufacturer: truck.engine_manufacturer || "",
+            engineModel: truck.engine_model || "",
+            cab: truck.cab || ""
+          }));
+          
+          // Store all trucks for client-side pagination if needed
+          setAllTrucks(formattedTrucks);
+          
+          // Set pagination data from API response
+          if (data.pagination) {
+            setTotalItems(data.pagination.totalItems || formattedTrucks.length);
+            setTotalPages(data.pagination.totalPages || Math.ceil(formattedTrucks.length / pageSize));
+            
+            // If API handles pagination, use the returned trucks directly
+            setTrucks(formattedTrucks);
+          } else {
+            // If API doesn't handle pagination, do it client-side
+            setTotalItems(formattedTrucks.length);
+            setTotalPages(Math.ceil(formattedTrucks.length / pageSize));
+            
+            // Manually paginate
+            const startIndex = (currentPage - 1) * pageSize;
+            const endIndex = startIndex + pageSize;
+            setTrucks(formattedTrucks.slice(startIndex, endIndex));
+          }
+        } else {
+          // Fallback to generating random trucks if no results
+          const totalTrucks = 15; // Generate enough for a few pages
+          const newTrucks: Truck[] = Array(totalTrucks)
+            .fill(null)
+            .map((_, index) => generateRandomTruck(index + 1, filters));
+            
+          setAllTrucks(newTrucks);
+          setTotalItems(newTrucks.length);
+          setTotalPages(Math.ceil(newTrucks.length / pageSize));
+          
+          // Paginate the generated trucks
+          const startIndex = (currentPage - 1) * pageSize;
+          const endIndex = startIndex + pageSize;
+          setTrucks(newTrucks.slice(startIndex, endIndex));
+        }
+        
+        setError(null);
+      } catch (err) {
+        console.error("Error fetching trucks:", err);
+        setError("Failed to load truck data");
+        
+        // Fallback to generating random trucks on error
+        const totalTrucks = 15; // Generate enough for a few pages
+        const newTrucks: Truck[] = Array(totalTrucks)
+          .fill(null)
+          .map((_, index) => generateRandomTruck(index + 1, filters));
+          
+        setAllTrucks(newTrucks);
+        setTotalItems(newTrucks.length);
+        setTotalPages(Math.ceil(newTrucks.length / pageSize));
+        
+        // Paginate the generated trucks
+        const startIndex = (currentPage - 1) * pageSize;
+        const endIndex = startIndex + pageSize;
+        setTrucks(newTrucks.slice(startIndex, endIndex));
+      } finally {
+        setLoading(false);
+        
+        // Add visual indication that the data has changed
         setTimeout(() => {
-          row.classList.remove("bg-green-50")
-        }, 1000)
-      })
-    }, 100)
-  }, [refreshTrigger, filters])
+          const rows = document.querySelectorAll("tbody tr");
+          rows.forEach((row) => {
+            row.classList.add("bg-green-50");
+            setTimeout(() => {
+              row.classList.remove("bg-green-50");
+            }, 1000);
+          });
+        }, 100);
+      }
+    };
+    
+    fetchTrucks();
+  }, [refreshTrigger, filters, currentPage, pageSize]);
+
+  // Handle page change
+  const handlePageChange = (newPage: number) => {
+    if (newPage >= 1 && newPage <= totalPages) {
+      setCurrentPage(newPage);
+      
+      // If we have all trucks loaded, we can paginate client-side 
+      // without waiting for the API call to complete
+      if (allTrucks.length > 0) {
+        const startIndex = (newPage - 1) * pageSize;
+        const endIndex = startIndex + pageSize;
+        setTrucks(allTrucks.slice(startIndex, endIndex));
+      }
+    }
+  };
+
+  // Handle page size change
+  const handlePageSizeChange = (newSize: number) => {
+    setPageSize(newSize);
+    setCurrentPage(1); // Reset to first page when changing page size
+    
+    // Update pagination calculations and data
+    if (allTrucks.length > 0) {
+      setTotalPages(Math.ceil(allTrucks.length / newSize));
+      setTrucks(allTrucks.slice(0, newSize));
+    }
+  };
 
   return (
-    <div className="overflow-auto">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Make/Model</TableHead>
-            <TableHead>Year</TableHead>
-            <TableHead>Miles</TableHead>
-            <TableHead>Price</TableHead>
-            <TableHead>Location</TableHead>
-            <TableHead className="text-right">Action</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {trucks.map((truck) => (
-            <TableRow key={truck.id} className="transition-colors duration-300">
-              <TableCell className="font-medium">
-                <div>
-                  {truck.make} {truck.model}
-                </div>
-                <div className="flex items-center gap-2 mt-1">
-                  <Badge variant="outline" className="text-xs">
-                    {truck.condition}
-                  </Badge>
-                </div>
-              </TableCell>
-              <TableCell>{truck.year}</TableCell>
-              <TableCell>{truck.miles.toLocaleString()}</TableCell>
-              <TableCell>${truck.price.toLocaleString()}</TableCell>
-              <TableCell>{truck.location}</TableCell>
-              <TableCell className="text-right">
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  asChild
-                >
-                  <a 
-                    href={truck.truckPaperUrl} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                  >
-                    Details
-                    <ChevronRight className="ml-1 h-4 w-4" />
-                  </a>
-                </Button>
-              </TableCell>
+    <div className="space-y-4">
+      <div className="overflow-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Make/Model</TableHead>
+              <TableHead>Year</TableHead>
+              <TableHead>Miles</TableHead>
+              <TableHead>Price</TableHead>
+              <TableHead>Location</TableHead>
+              <TableHead className="text-right">Action</TableHead>
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody>
+            {loading ? (
+              // Show loading state
+              Array(pageSize).fill(null).map((_, index) => (
+                <TableRow key={`loading-${index}`}>
+                  <TableCell colSpan={6} className="text-center py-4">
+                    <div className="flex justify-center items-center h-6 opacity-50">
+                      <div className="animate-pulse h-4 w-32 bg-muted rounded"></div>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))
+            ) : trucks.length > 0 ? (
+              trucks.map((truck) => (
+                <TableRow key={truck.id} className="transition-colors duration-300">
+                  <TableCell className="font-medium">
+                    <div>
+                      {truck.make} {truck.model}
+                    </div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <Badge variant="outline" className="text-xs">
+                        {truck.condition}
+                      </Badge>
+                      {truck.horsepower && (
+                        <Badge variant="outline" className="text-xs">
+                          {truck.horsepower}
+                        </Badge>
+                      )}
+                      {truck.cab && (
+                        <Badge variant="outline" className="text-xs">
+                          {truck.cab}
+                        </Badge>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell>{truck.year}</TableCell>
+                  <TableCell>{truck.miles.toLocaleString()}</TableCell>
+                  <TableCell>${truck.price.toLocaleString()}</TableCell>
+                  <TableCell>{truck.location}</TableCell>
+                  <TableCell className="text-right">
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      asChild
+                    >
+                      <a 
+                        href={truck.truckPaperUrl} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                      >
+                        Details
+                        <ChevronRight className="ml-1 h-4 w-4" />
+                      </a>
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))
+            ) : (
+              <TableRow>
+                <TableCell colSpan={6} className="text-center py-4">
+                  No trucks found matching your criteria
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* Pagination controls */}
+      {totalItems > 0 && (
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <span className="text-sm text-muted-foreground">Show</span>
+            <select 
+              className="h-8 w-16 rounded-md border border-input bg-background px-2 text-sm"
+              value={pageSize}
+              onChange={(e) => handlePageSizeChange(Number(e.target.value))}
+              disabled={loading}
+            >
+              <option value="5">5</option>
+              <option value="10">10</option>
+              <option value="20">20</option>
+            </select>
+            <span className="text-sm text-muted-foreground">per page</span>
+          </div>
+          
+          <div className="text-sm text-muted-foreground">
+            Showing {Math.min((currentPage - 1) * pageSize + 1, totalItems)} to {Math.min(currentPage * pageSize, totalItems)} of {totalItems} entries
+          </div>
+          
+          <div className="flex items-center space-x-2">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => handlePageChange(currentPage - 1)}
+              disabled={currentPage === 1 || loading}
+            >
+              Previous
+            </Button>
+            
+            {/* Page numbers */}
+            <div className="flex items-center space-x-1">
+              {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                // Show pages around current page
+                let pageNum = currentPage;
+                if (totalPages <= 5) {
+                  pageNum = i + 1;
+                } else if (currentPage <= 3) {
+                  pageNum = i + 1;
+                } else if (currentPage >= totalPages - 2) {
+                  pageNum = totalPages - 4 + i;
+                } else {
+                  pageNum = currentPage - 2 + i;
+                }
+                
+                return (
+                  <Button
+                    key={pageNum}
+                    variant={currentPage === pageNum ? "default" : "outline"}
+                    size="sm"
+                    className="w-8 h-8 p-0"
+                    onClick={() => handlePageChange(pageNum)}
+                    disabled={loading}
+                  >
+                    {pageNum}
+                  </Button>
+                );
+              })}
+            </div>
+            
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => handlePageChange(currentPage + 1)}
+              disabled={currentPage === totalPages || loading}
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
