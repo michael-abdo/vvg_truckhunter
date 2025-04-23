@@ -381,6 +381,16 @@ export default function TruckFinder() {
     setter(Math.max(0, value - decrement))
   }
 
+  // Modify the setActiveTab function to reset relevant states when switching to VIN tab
+  const handleTabChange = (value: string) => {
+    setActiveTab(value);
+    
+    // Reset search results when switching to VIN tab
+    if (value === "vin") {
+      setSearchPerformed(false);
+    }
+  }
+
   // Render loading state if options are still loading
   if (loading) {
     return (
@@ -399,7 +409,7 @@ export default function TruckFinder() {
           <CardDescription>Select your criteria to find comparable trucks and their prices</CardDescription>
         </CardHeader>
         <CardContent>
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="criteria">Search by Criteria</TabsTrigger>
               <TabsTrigger value="vin">Search by VIN</TabsTrigger>
@@ -1188,7 +1198,8 @@ export default function TruckFinder() {
         </CardContent>
       </Card>
 
-      {searchPerformed && (
+      {/* Only show results when searchPerformed is true AND we're on the criteria tab */}
+      {searchPerformed && activeTab === "criteria" && (
         <>
           <div className="bg-muted p-4 rounded-lg">
             <div className="flex items-center justify-between mb-2">
