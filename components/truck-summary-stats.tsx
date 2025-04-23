@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { CircleDollarSign, Clock, Gauge, Calendar, BarChart2 } from "lucide-react"
+import { CircleDollarSign, Clock, Gauge, Calendar, BarChart2, AlertCircle } from "lucide-react"
 
 interface StatItemProps {
   icon: React.ReactNode
@@ -45,12 +45,24 @@ export default function TruckSummaryStats({ trucks = [] }: TruckSummaryStatsProp
     priceRange: { min: 0, max: 0 },
   })
   const [loading, setLoading] = useState(true)
+  const [hasData, setHasData] = useState(false)
 
   // Calculate statistics whenever trucks data changes
   useEffect(() => {
+    // Reset hasData flag
+    setHasData(false)
+    
     // Don't calculate if no trucks data
     if (!trucks || trucks.length === 0) {
       setLoading(false)
+      // Reset stats to zero when there are no trucks
+      setStats({
+        averagePrice: 0,
+        averageYear: 0,
+        averageMileage: 0,
+        averageHorsepower: 0,
+        priceRange: { min: 0, max: 0 },
+      })
       return
     }
 
@@ -78,6 +90,9 @@ export default function TruckSummaryStats({ trucks = [] }: TruckSummaryStatsProp
         averageHorsepower: calculateAverage(horsepowers),
         priceRange: { min: minPrice, max: maxPrice }
       })
+      
+      // Set hasData flag if we have valid data
+      setHasData(prices.length > 0 || years.length > 0 || mileages.length > 0)
     } catch (error) {
       console.error("Error calculating truck statistics:", error)
     } finally {
@@ -101,42 +116,84 @@ export default function TruckSummaryStats({ trucks = [] }: TruckSummaryStatsProp
         <CardTitle>Market Statistics</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <StatItem
-            icon={<CircleDollarSign className="h-5 w-5 text-primary" />}
-            label="Average Price"
-            value={formatPrice(stats.averagePrice)}
-            loading={loading}
-          />
-          <StatItem
-            icon={<Calendar className="h-5 w-5 text-primary" />}
-            label="Average Year"
-            value={stats.averageYear.toFixed(1)}
-            loading={loading}
-          />
-          <StatItem
-            icon={<Gauge className="h-5 w-5 text-primary" />}
-            label="Average Mileage"
-            value={formatMileage(stats.averageMileage)}
-            loading={loading}
-          />
-          <StatItem
-            icon={<BarChart2 className="h-5 w-5 text-primary" />}
-            label="Average Horsepower"
-            value={`${stats.averageHorsepower.toFixed(0)} HP`}
-            loading={loading}
-          />
-        </div>
-        
-        {!loading && trucks.length > 0 && (
-          <div className="mt-6 border-t pt-6">
+        {loading ? (
+          // Show loading state for statistics
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <StatItem
+              icon={<CircleDollarSign className="h-5 w-5 text-primary" />}
+              label="Average Price"
+              value={formatPrice(stats.averagePrice)}
+              loading={loading}
+            />
+            <StatItem
+              icon={<Calendar className="h-5 w-5 text-primary" />}
+              label="Average Year"
+              value={stats.averageYear.toFixed(1)}
+              loading={loading}
+            />
+            <StatItem
+              icon={<Gauge className="h-5 w-5 text-primary" />}
+              label="Average Mileage"
+              value={formatMileage(stats.averageMileage)}
+              loading={loading}
+            />
+            <StatItem
+              icon={<BarChart2 className="h-5 w-5 text-primary" />}
+              label="Average Horsepower"
+              value={`${stats.averageHorsepower.toFixed(0)} HP`}
+              loading={loading}
+            />
+          </div>
+        ) : !trucks || trucks.length === 0 ? (
+          // Show no data available message
+          <div className="flex flex-col items-center justify-center py-6 text-center">
+            <div className="rounded-full bg-muted p-3 mb-3">
+              <AlertCircle className="h-6 w-6 text-muted-foreground" />
+            </div>
+            <h3 className="text-lg font-medium mb-1">No Data Available</h3>
             <p className="text-sm text-muted-foreground">
-              Price Range: <span className="font-medium">{formatPrice(stats.priceRange.min)}</span> to <span className="font-medium">{formatPrice(stats.priceRange.max)}</span>
-            </p>
-            <p className="text-sm text-muted-foreground mt-1">
-              Based on {trucks.length} trucks matching your criteria
+              No trucks found matching your criteria to calculate statistics
             </p>
           </div>
+        ) : (
+          // Show statistics when data is available
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <StatItem
+                icon={<CircleDollarSign className="h-5 w-5 text-primary" />}
+                label="Average Price"
+                value={formatPrice(stats.averagePrice)}
+                loading={loading}
+              />
+              <StatItem
+                icon={<Calendar className="h-5 w-5 text-primary" />}
+                label="Average Year"
+                value={stats.averageYear.toFixed(1)}
+                loading={loading}
+              />
+              <StatItem
+                icon={<Gauge className="h-5 w-5 text-primary" />}
+                label="Average Mileage"
+                value={formatMileage(stats.averageMileage)}
+                loading={loading}
+              />
+              <StatItem
+                icon={<BarChart2 className="h-5 w-5 text-primary" />}
+                label="Average Horsepower"
+                value={`${stats.averageHorsepower.toFixed(0)} HP`}
+                loading={loading}
+              />
+            </div>
+            
+            <div className="mt-6 border-t pt-6">
+              <p className="text-sm text-muted-foreground">
+                Price Range: <span className="font-medium">{formatPrice(stats.priceRange.min)}</span> to <span className="font-medium">{formatPrice(stats.priceRange.max)}</span>
+              </p>
+              <p className="text-sm text-muted-foreground mt-1">
+                Based on {trucks.length} trucks matching your criteria
+              </p>
+            </div>
+          </>
         )}
       </CardContent>
     </Card>

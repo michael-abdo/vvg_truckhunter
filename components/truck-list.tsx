@@ -246,18 +246,18 @@ export default function TruckList({
 
   // Initialize with trucks from props if available
   useEffect(() => {
-    if (disableExternalFetching && propTrucks && propTrucks.length > 0) {
+    if (disableExternalFetching) {
       // Use trucks from props when external fetching is disabled
-      setAllTrucks(propTrucks);
-      setTotalItems(propTrucks.length);
-      setTotalPages(Math.ceil(propTrucks.length / pageSize));
+      setAllTrucks(propTrucks || []);
+      setTotalItems(propTrucks?.length || 0);
+      setTotalPages(Math.ceil((propTrucks?.length || 0) / pageSize));
       
       // Set current page of trucks
       const startIndex = (currentPage - 1) * pageSize;
       const endIndex = startIndex + pageSize;
-      setTrucks(propTrucks.slice(startIndex, endIndex));
+      setTrucks(propTrucks?.slice(startIndex, endIndex) || []);
     }
-  }, [propTrucks, disableExternalFetching]);
+  }, [propTrucks, disableExternalFetching, currentPage, pageSize]);
 
   // Remove currentPage and pageSize from the dependency array to prevent API calls on pagination
   useEffect(() => {
@@ -448,20 +448,20 @@ export default function TruckList({
                   </TableCell>
                 </TableRow>
               ))
-            ) : trucks.length > 0 ? (
+            ) : trucks && trucks.length > 0 ? (
               trucks.map((truck) => (
                 <TableRow key={truck.id} className="transition-colors duration-300">
                   <TableCell className="font-medium">
                     <div>
-                      {truck.manufacturer} {truck.model}
+                      {truck.make || truck.manufacturer} {truck.model}
                     </div>
                     <div className="flex items-center gap-2 mt-1">
                       <Badge variant="outline" className="text-xs">
                         {truck.condition}
                       </Badge>
-                      {truck.horsepower && (
+                      {(truck.horsepower || truck.engine_model) && (
                         <Badge variant="outline" className="text-xs">
-                          {truck.horsepower}
+                          {truck.horsepower || truck.engine_model}
                         </Badge>
                       )}
                       {truck.cab && (
@@ -472,9 +472,9 @@ export default function TruckList({
                     </div>
                   </TableCell>
                   <TableCell>{truck.year}</TableCell>
-                  <TableCell>{truck.mileage}</TableCell>
-                  <TableCell>{truck.retail_price}</TableCell>
-                  <TableCell>{truck.truck_location}</TableCell>
+                  <TableCell>{truck.miles || truck.mileage}</TableCell>
+                  <TableCell>{truck.price || truck.retail_price}</TableCell>
+                  <TableCell>{truck.location || truck.truck_location}</TableCell>
                   <TableCell className="text-right">
                     <Button 
                       variant="ghost" 
@@ -482,7 +482,7 @@ export default function TruckList({
                       asChild
                     >
                       <a 
-                        href={truck.url} 
+                        href={truck.truckPaperUrl || truck.url} 
                         target="_blank" 
                         rel="noopener noreferrer"
                       >

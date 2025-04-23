@@ -239,53 +239,55 @@ export default function TruckFinder() {
       setSearchCount((prev) => prev + 1)
       setRefreshTrigger((prev) => prev + 1)
       
-      console.log("Fetching truck count from API...");
+      console.log("Fetching truck data from APIs simultaneously...");
       
-      // Get the count of matching trucks from the API
-      const countResponse = await fetch('/api/trucks/count', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ filters: newFilters }),
-      })
+      // Call both APIs simultaneously using Promise.all
+      const [countResponse, trucksResponse] = await Promise.all([
+        fetch('/api/trucks/count', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ filters: newFilters }),
+        }),
+        fetch('/api/trucks', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ filters: newFilters }),
+        })
+      ]);
       
-      const countData = await countResponse.json()
-      
-      // Log the complete count response
+      // Process count response
+      const countData = await countResponse.json();
       console.log("Truck count API response:", countData);
       
       if (countData.success) {
         console.log("Truck count:", countData.count);
-        setTruckCount(countData.count)
+        setTruckCount(countData.count);
       } else {
         console.error("Failed to get truck count:", countData.error);
-        // If API call fails, set a default count
-        setTruckCount(0)
+        setTruckCount(0);
       }
       
-      // Also log the response from the main trucks API call
-      console.log("Fetching truck data from main API...");
-      const trucksResponse = await fetch('/api/trucks', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ filters: newFilters }),
-      });
-      
+      // Process trucks response
       const trucksData = await trucksResponse.json();
+      console.log("Truck data API response:", trucksData);
       
       if (trucksData.success && trucksData.trucks) {
-        // Store the trucks data
         setTrucks(trucksData.trucks);
+      } else {
+        console.error("Failed to get truck data:", trucksData.error);
+        setTrucks([]);
       }
       
     } catch (error) {
       console.error("Error getting truck data:", error);
-      setTruckCount(0)
+      setTruckCount(0);
+      setTrucks([]);
     } finally {
-      setSearchLoading(false)
+      setSearchLoading(false);
     }
   }
 

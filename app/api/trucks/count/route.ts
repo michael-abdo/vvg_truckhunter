@@ -82,6 +82,61 @@ export async function POST(request: Request) {
       filterExpressions.push(`(${stateExpressions.join(' OR ')})`);
     }
     
+    // Transmission filter
+    if (filters.transmission && filters.transmission.length > 0) {
+      const transmissionExpressions = filters.transmission.map((transmission: string, index: number) => {
+        const transmissionKey = `:transmission${index}`;
+        expressionAttributeValues[transmissionKey] = transmission;
+        return `#transmission = ${transmissionKey}`;
+      });
+      expressionAttributeNames['#transmission'] = 'transmission';
+      filterExpressions.push(`(${transmissionExpressions.join(' OR ')})`);
+    }
+    
+    // Transmission Manufacturer filter
+    if (filters.transmissionManufacturer && filters.transmissionManufacturer.length > 0) {
+      const transMfrExpressions = filters.transmissionManufacturer.map((manufacturer: string, index: number) => {
+        const transMfrKey = `:transMfr${index}`;
+        expressionAttributeValues[transMfrKey] = manufacturer;
+        return `#transmissionManufacturer = ${transMfrKey}`;
+      });
+      expressionAttributeNames['#transmissionManufacturer'] = 'transmission_manufacturer';
+      filterExpressions.push(`(${transMfrExpressions.join(' OR ')})`);
+    }
+    
+    // Engine Manufacturer filter
+    if (filters.engineManufacturer && filters.engineManufacturer.length > 0) {
+      const engineMfrExpressions = filters.engineManufacturer.map((manufacturer: string, index: number) => {
+        const engineMfrKey = `:engineMfr${index}`;
+        expressionAttributeValues[engineMfrKey] = manufacturer;
+        return `#engineManufacturer = ${engineMfrKey}`;
+      });
+      expressionAttributeNames['#engineManufacturer'] = 'engine_manufacturer';
+      filterExpressions.push(`(${engineMfrExpressions.join(' OR ')})`);
+    }
+    
+    // Engine Model filter
+    if (filters.engineModel && filters.engineModel.length > 0) {
+      const engineModelExpressions = filters.engineModel.map((model: string, index: number) => {
+        const engineModelKey = `:engineModel${index}`;
+        expressionAttributeValues[engineModelKey] = model;
+        return `#engineModel = ${engineModelKey}`;
+      });
+      expressionAttributeNames['#engineModel'] = 'engine_model';
+      filterExpressions.push(`(${engineModelExpressions.join(' OR ')})`);
+    }
+    
+    // Cab Type filter
+    if (filters.cab && filters.cab.length > 0) {
+      const cabExpressions = filters.cab.map((cab: string, index: number) => {
+        const cabKey = `:cab${index}`;
+        expressionAttributeValues[cabKey] = cab;
+        return `#cab = ${cabKey}`;
+      });
+      expressionAttributeNames['#cab'] = 'cab';
+      filterExpressions.push(`(${cabExpressions.join(' OR ')})`);
+    }
+    
     console.log('Filter expressions:', filterExpressions);
     console.log('Expression attribute values:', expressionAttributeValues);
     console.log('Expression attribute names:', expressionAttributeNames);
