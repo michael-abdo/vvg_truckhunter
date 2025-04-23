@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, ScanCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, ScanCommand, ScanCommandOutput } from "@aws-sdk/lib-dynamodb";
 
 const dynamoClient = new DynamoDBClient({
   region: process.env.AWS_REGION || 'us-east-1',
@@ -62,6 +62,15 @@ export async function POST(request: Request) {
         expressionAttributeNames['#year'] = 'year_clean';
       }
     
+    // Horsepower range filter
+    if (filters.horsepower) {
+      const { value, delta } = filters.horsepower;
+      filterExpressions.push("#horsepower BETWEEN :minHorsepower AND :maxHorsepower");
+      expressionAttributeValues[':minHorsepower'] = Number(value - delta);
+      expressionAttributeValues[':maxHorsepower'] = Number(value + delta);
+      expressionAttributeNames['#horsepower'] = 'horsepower_clean';
+    }
+    
     // States filter
     if (filters.states && filters.states.length > 0) {
       const stateExpressions = filters.states.map((state: string, index: number) => {
@@ -77,19 +86,35 @@ export async function POST(request: Request) {
     console.log('Expression attribute values:', expressionAttributeValues);
     console.log('Expression attribute names:', expressionAttributeNames);
     
-    // Query DynamoDB
-    const scanCommand = new ScanCommand({
-      TableName: process.env.TRUCK_TABLE_NAME,
-      FilterExpression: filterExpressions.length > 0 ? filterExpressions.join(' AND ') : undefined,
-      ExpressionAttributeValues: Object.keys(expressionAttributeValues).length > 0 ? expressionAttributeValues : undefined,
-      ExpressionAttributeNames: Object.keys(expressionAttributeNames).length > 0 ? expressionAttributeNames : undefined,
-      Select: "COUNT" // Only return the count, not the items
-    });
+    // Query DynamoDB with pagination to get complete count
+    async function getTotalCount() {
+      let totalCount = 0;
+      let lastEvaluatedKey: Record<string, any> | undefined = undefined;
+      let scanCount = 0;
+      
+      do {
+        scanCount++;
+        const scanCommand = new ScanCommand({
+          TableName: process.env.TRUCK_TABLE_NAME,
+          FilterExpression: filterExpressions.length > 0 ? filterExpressions.join(' AND ') : undefined,
+          ExpressionAttributeValues: Object.keys(expressionAttributeValues).length > 0 ? expressionAttributeValues : undefined,
+          ExpressionAttributeNames: Object.keys(expressionAttributeNames).length > 0 ? expressionAttributeNames : undefined,
+          Select: "COUNT",
+          ExclusiveStartKey: lastEvaluatedKey
+        });
+        
+        const result = await docClient.send(scanCommand) as ScanCommandOutput;
+        totalCount += result.Count || 0;
+        lastEvaluatedKey = result.LastEvaluatedKey;
+        
+        console.log(`Scan #${scanCount}: Found ${result.Count || 0} trucks, running total: ${totalCount}`);
+      } while (lastEvaluatedKey);
+      
+      console.log(`Total count after full scan: ${totalCount} trucks`);
+      return totalCount;
+    }
     
-    const result = await docClient.send(scanCommand);
-    const count = result.Count || 0;
-    
-    console.log(`Found ${count} matching trucks`);
+    const count = await getTotalCount();
     
     return NextResponse.json({ 
       success: true, 

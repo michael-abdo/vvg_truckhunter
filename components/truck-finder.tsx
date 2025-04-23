@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Check, ChevronsUpDown, Minus, Plus, Search } from "lucide-react"
+import { Check, ChevronsUpDown, Loader2, Minus, Plus, Search } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import TruckList from "./truck-list"
@@ -17,6 +17,7 @@ import PriceChart from "./price-chart"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { queryVinInformation } from "@/lib/dynamodb"
 import { states } from "../app/lib/states"
+import TruckSummaryStats from "./truck-summary-stats"
 
 export default function TruckFinder() {
   // State for dropdown options from database
@@ -28,6 +29,11 @@ export default function TruckFinder() {
   const [engineModels, setEngineModels] = useState<Record<string, Array<{ value: string; label: string }>>>({})
   const [cabTypes, setCabTypes] = useState<Array<{ value: string; label: string }>>([])
   const [loading, setLoading] = useState(true)
+  
+  // Loading states for buttons
+  const [searchLoading, setSearchLoading] = useState(false)
+  const [vinSearchLoading, setVinSearchLoading] = useState(false)
+  const [applyVinSpecsLoading, setApplyVinSpecsLoading] = useState(false)
 
   // Existing state variables
   const [selectedMakes, setSelectedMakes] = useState<string[]>([])
@@ -95,6 +101,9 @@ export default function TruckFinder() {
     return model
   })
 
+  // Add state to store truck data 
+  const [trucks, setTrucks] = useState([])
+
   // Fetch filter options from database on component mount
   useEffect(() => {
     const fetchFilterOptions = async () => {
@@ -146,54 +155,56 @@ export default function TruckFinder() {
   
   // Update the handleSearch function to get actual count from API
   const handleSearch = async () => {
-    // Use labels for makes and models but keep original values (codes) for states
-    const selectedMakeLabels = selectedMakes.map(
-      make => truckMakes.find(m => m.value === make)?.label || make
-    )
-    
-    const newFilters = {
-      makes: selectedMakeLabels, // Send labels instead of values
-      models: selectedModels.map(model => {
-        for (const make in truckModels) {
-          const found = truckModels[make]?.find(m => m.value === model)
-          if (found) return found.label
-        }
-        return model
-      }),
-      miles: { value: miles, delta: milesDelta },
-      year: { value: year, delta: yearDelta },
-      horsepower: { value: horsepower, delta: horsepowerDelta },
-      transmission: selectedTransmissions.map(trans => 
-        transmissionTypes.find(t => t.value === trans)?.label || trans
-      ),
-      transmissionManufacturer: selectedTransMfrs.map(mfr => 
-        transmissionManufacturers.find(m => m.value === mfr)?.label || mfr
-      ),
-      engineManufacturer: selectedEngineMfrs.map(mfr => 
-        engineManufacturers.find(m => m.value === mfr)?.label || mfr
-      ),
-      engineModel: selectedEngineModels.map(model => {
-        for (const mfr in engineModels) {
-          const found = engineModels[mfr]?.find(m => m.value === model)
-          if (found) return found.label
-        }
-        return model
-      }),
-      cab: selectedCabTypes.map(cab => 
-        cabTypes.find(c => c.value === cab)?.label || cab
-      ),
-      states: selectedStates, // Send the state codes directly, not the labels
-    }
-    
-    // Log the filters being sent to the API
-    console.log("Sending filters to API:", JSON.stringify(newFilters, null, 2));
-    
-    setFilters(newFilters)
-    setSearchPerformed(true)
-    setSearchCount((prev) => prev + 1)
-    setRefreshTrigger((prev) => prev + 1)
-    
     try {
+      setSearchLoading(true)
+      
+      // Use labels for makes and models but keep original values (codes) for states
+      const selectedMakeLabels = selectedMakes.map(
+        make => truckMakes.find(m => m.value === make)?.label || make
+      )
+      
+      const newFilters = {
+        makes: selectedMakeLabels, // Send labels instead of values
+        models: selectedModels.map(model => {
+          for (const make in truckModels) {
+            const found = truckModels[make]?.find(m => m.value === model)
+            if (found) return found.label
+          }
+          return model
+        }),
+        miles: { value: miles, delta: milesDelta },
+        year: { value: year, delta: yearDelta },
+        horsepower: { value: horsepower, delta: horsepowerDelta },
+        transmission: selectedTransmissions.map(trans => 
+          transmissionTypes.find(t => t.value === trans)?.label || trans
+        ),
+        transmissionManufacturer: selectedTransMfrs.map(mfr => 
+          transmissionManufacturers.find(m => m.value === mfr)?.label || mfr
+        ),
+        engineManufacturer: selectedEngineMfrs.map(mfr => 
+          engineManufacturers.find(m => m.value === mfr)?.label || mfr
+        ),
+        engineModel: selectedEngineModels.map(model => {
+          for (const mfr in engineModels) {
+            const found = engineModels[mfr]?.find(m => m.value === model)
+            if (found) return found.label
+          }
+          return model
+        }),
+        cab: selectedCabTypes.map(cab => 
+          cabTypes.find(c => c.value === cab)?.label || cab
+        ),
+        states: selectedStates, // Send the state codes directly, not the labels
+      }
+      
+      // Log the filters being sent to the API
+      console.log("Sending filters to API:", JSON.stringify(newFilters, null, 2));
+      
+      setFilters(newFilters as any) // Using type assertion to fix TS error
+      setSearchPerformed(true)
+      setSearchCount((prev) => prev + 1)
+      setRefreshTrigger((prev) => prev + 1)
+      
       console.log("Fetching truck count from API...");
       
       // Get the count of matching trucks from the API
@@ -230,16 +241,17 @@ export default function TruckFinder() {
       });
       
       const trucksData = await trucksResponse.json();
-      console.log("Main trucks API response:", trucksData);
-      console.log("Number of trucks returned:", trucksData.trucks ? trucksData.trucks.length : 0);
       
-      if (trucksData.trucks && trucksData.trucks.length > 0) {
-        console.log("First truck example:", trucksData.trucks[0]);
+      if (trucksData.success && trucksData.trucks) {
+        // Store the trucks data
+        setTrucks(trucksData.trucks);
       }
       
     } catch (error) {
       console.error("Error getting truck data:", error);
       setTruckCount(0)
+    } finally {
+      setSearchLoading(false)
     }
   }
 
@@ -247,6 +259,7 @@ export default function TruckFinder() {
   const handleVinSearch = async () => {
     if (vin && vin.length >= 17) {
       try {
+        setVinSearchLoading(true)
         setVinSearchPerformed(false); // Reset while searching
         
         console.log(`Searching for VIN: ${vin}`);
@@ -304,6 +317,7 @@ export default function TruckFinder() {
         setVinMatchFound(false);
         setVinSpecs(null);
       } finally {
+        setVinSearchLoading(false)
         setVinSearchPerformed(true);
       }
     } else {
@@ -313,10 +327,13 @@ export default function TruckFinder() {
 
   const applyVinSpecsToSearch = () => {
     if (vinSpecs) {
+      setApplyVinSpecsLoading(true)
       // Apply the specs to the search and switch to criteria tab
       setActiveTab("criteria");
       // Then trigger search
-      handleSearch();
+      handleSearch().finally(() => {
+        setApplyVinSpecsLoading(false)
+      });
     }
   }
 
@@ -1018,8 +1035,15 @@ export default function TruckFinder() {
                   )}
                 </div>
               </div>
-              <Button className="w-full mt-6" onClick={handleSearch}>
-                Find Similar Trucks
+              <Button disabled={searchLoading} className="w-full mt-6" onClick={handleSearch}>
+                {searchLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Searching...
+                  </>
+                ) : (
+                  "Find Similar Trucks"
+                )}
               </Button>
             </TabsContent>
             
@@ -1036,9 +1060,13 @@ export default function TruckFinder() {
                       maxLength={17}
                       className="flex-1"
                     />
-                    <Button onClick={handleVinSearch}>
-                      <Search className="h-4 w-4 mr-2" />
-                      Search
+                    <Button disabled={vinSearchLoading} onClick={handleVinSearch}>
+                      {vinSearchLoading ? (
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      ) : (
+                        <Search className="h-4 w-4 mr-2" />
+                      )}
+                      {vinSearchLoading ? "Searching..." : "Search"}
                     </Button>
                   </div>
                   <p className="text-xs text-muted-foreground">Enter a valid 17-character VIN to find exact match and populate search criteria</p>
@@ -1088,8 +1116,19 @@ export default function TruckFinder() {
                               </div>
                             </div>
                             
-                            <Button className="w-full mt-4" onClick={applyVinSpecsToSearch}>
-                              Use These Specs to Find Similar Trucks
+                            <Button 
+                              disabled={applyVinSpecsLoading} 
+                              className="w-full mt-4" 
+                              onClick={applyVinSpecsToSearch}
+                            >
+                              {applyVinSpecsLoading ? (
+                                <>
+                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                  Searching...
+                                </>
+                              ) : (
+                                "Use These Specs to Find Similar Trucks"
+                              )}
                             </Button>
                           </>
                         )}
@@ -1199,25 +1238,22 @@ export default function TruckFinder() {
             </div>
           </div>
 
-          <div className="grid gap-6 lg:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle>Price Trends (Last 6 Months)</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <PriceChart key={refreshTrigger} />
-              </CardContent>
-            </Card>
+          {/* Pass trucks to the TruckSummaryStats component */}
+          <TruckSummaryStats trucks={trucks} refreshTrigger={refreshTrigger} />
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Similar Trucks</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <TruckList refreshTrigger={refreshTrigger} filters={filters} />
-              </CardContent>
-            </Card>
-          </div>
+          <Card>
+            <CardHeader>
+              <CardTitle>Similar Trucks</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <TruckList 
+                trucks={trucks} 
+                filters={filters} 
+                key={`trucks-${refreshTrigger}`}
+                disableExternalFetching={true}
+              />
+            </CardContent>
+          </Card>
         </>
       )}
     </div>

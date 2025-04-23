@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, QueryCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, QueryCommand, ScanCommand, ScanCommandOutput } from "@aws-sdk/lib-dynamodb";
 
 const dynamoClient = new DynamoDBClient({
   region: process.env.AWS_REGION || 'us-east-1',
@@ -215,6 +215,15 @@ export async function POST(request: Request) {
       expressionAttributeNames['#year'] = 'year_clean';
     }
     
+    // Horsepower range filter
+    if (filters.horsepower) {
+      const { value, delta } = filters.horsepower;
+      filterExpressions.push("#horsepower BETWEEN :minHorsepower AND :maxHorsepower");
+      expressionAttributeValues[':minHorsepower'] = Number(value - delta);
+      expressionAttributeValues[':maxHorsepower'] = Number(value + delta);
+      expressionAttributeNames['#horsepower'] = 'horsepower_clean';
+    }
+    
     // Add other filters (transmission, engine, cab, etc.) as needed
     // ... 
     
@@ -229,46 +238,34 @@ export async function POST(request: Request) {
     console.log('ExpressionAttributeValues:', JSON.stringify(expressionAttributeValues, null, 2));
     console.log('ExpressionAttributeNames:', JSON.stringify(expressionAttributeNames, null, 2));
     
-    // Query DynamoDB
-    const scanCommand = new ScanCommand({
-      TableName: process.env.TRUCK_TABLE_NAME,
-      FilterExpression: filterExpressions.length > 0 ? filterExpressions.join(' AND ') : undefined,
-      ExpressionAttributeValues: Object.keys(expressionAttributeValues).length > 0 ? expressionAttributeValues : undefined,
-      ExpressionAttributeNames: Object.keys(expressionAttributeNames).length > 0 ? expressionAttributeNames : undefined
-    });
-    
-    console.log('Executing DynamoDB scan command...');
-    const result = await docClient.send(scanCommand);
-    
-    // First check if the result has expected structure
-    console.log('DynamoDB result structure:', Object.keys(result));
-    
-    const trucks = result.Items || [];
-    console.log(`Retrieved ${trucks.length} trucks after filtering`);
-    
-    // Log sample truck data (if any)
-    if (trucks.length > 0) {
-      console.log('First truck sample:', JSON.stringify(trucks[0], null, 2));
-    } else {
-      console.log('No trucks matched the filter criteria');
+    async function getAllItems() {
+      let allItems: any[] = [];
+      let lastEvaluatedKey: Record<string, any> | undefined = undefined;
       
-      // Try a basic scan without filters to check if table has data
-      const basicScanCommand = new ScanCommand({
-        TableName: process.env.TRUCK_TABLE_NAME,
-        Limit: 1
-      });
+      do {
+        const scanCommand = new ScanCommand({
+          TableName: process.env.TRUCK_TABLE_NAME,
+          FilterExpression: filterExpressions.length > 0 ? filterExpressions.join(' AND ') : undefined,
+          ExpressionAttributeValues: Object.keys(expressionAttributeValues).length > 0 ? expressionAttributeValues : undefined,
+          ExpressionAttributeNames: Object.keys(expressionAttributeNames).length > 0 ? expressionAttributeNames : undefined,
+          ExclusiveStartKey: lastEvaluatedKey
+        });
+        
+        const result = await docClient.send(scanCommand) as ScanCommandOutput;
+        if (result.Items && result.Items.length > 0) {
+          allItems = [...allItems, ...result.Items];
+        }
+        
+        lastEvaluatedKey = result.LastEvaluatedKey;
+        
+        console.log(`Retrieved batch of ${result.Items?.length || 0} trucks, total so far: ${allItems.length}`);
+      } while (lastEvaluatedKey);
       
-      console.log('Trying basic scan to check if table has any data...');
-      const basicResult = await docClient.send(basicScanCommand);
-      
-      if (basicResult.Items && basicResult.Items.length > 0) {
-        console.log('Table has data. First record:', JSON.stringify(basicResult.Items[0], null, 2));
-        console.log('Your filter criteria are likely too restrictive.');
-      } else {
-        console.log('Table appears to be empty or inaccessible.');
-      }
+      console.log(`Retrieved total of ${allItems.length} trucks after complete scan`);
+      return allItems;
     }
     
+    const trucks = await getAllItems();
     return NextResponse.json({ success: true, trucks });
   } catch (error) {
     console.error('Error processing POST request:', error);

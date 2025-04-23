@@ -223,9 +223,16 @@ const generateRandomTruck = (id: number, filters: TruckFilters): Truck => {
 interface TruckListProps {
   refreshTrigger?: number;
   filters?: TruckFilters;
+  trucks?: Truck[];
+  disableExternalFetching?: boolean;
 }
 
-export default function TruckList({ refreshTrigger = 0, filters = {} }: TruckListProps) {
+export default function TruckList({ 
+  refreshTrigger = 0, 
+  filters = {}, 
+  trucks: propTrucks = [], 
+  disableExternalFetching = false 
+}: TruckListProps) {
   const [trucks, setTrucks] = useState<Truck[]>([])
   const [allTrucks, setAllTrucks] = useState<Truck[]>([]) // Store all trucks for client-side pagination
   const [loading, setLoading] = useState<boolean>(false)
@@ -237,8 +244,28 @@ export default function TruckList({ refreshTrigger = 0, filters = {} }: TruckLis
   const [totalItems, setTotalItems] = useState<number>(0)
   const [totalPages, setTotalPages] = useState<number>(1)
 
-  // Effect to fetch trucks from API when refreshTrigger changes
+  // Initialize with trucks from props if available
   useEffect(() => {
+    if (disableExternalFetching && propTrucks && propTrucks.length > 0) {
+      // Use trucks from props when external fetching is disabled
+      setAllTrucks(propTrucks);
+      setTotalItems(propTrucks.length);
+      setTotalPages(Math.ceil(propTrucks.length / pageSize));
+      
+      // Set current page of trucks
+      const startIndex = (currentPage - 1) * pageSize;
+      const endIndex = startIndex + pageSize;
+      setTrucks(propTrucks.slice(startIndex, endIndex));
+    }
+  }, [propTrucks, disableExternalFetching]);
+
+  // Remove currentPage and pageSize from the dependency array to prevent API calls on pagination
+  useEffect(() => {
+    // Skip API fetching if it's disabled
+    if (disableExternalFetching) {
+      return;
+    }
+    
     const fetchTrucks = async () => {
       try {
         setLoading(true);
@@ -251,11 +278,11 @@ export default function TruckList({ refreshTrigger = 0, filters = {} }: TruckLis
           },
           body: JSON.stringify({ 
             filters,
-            // Send pagination info to API, but be prepared to handle client-side pagination
-            pagination: {
-              page: currentPage,
-              pageSize: pageSize
-            }
+            // Don't include pagination here - we'll handle it client-side
+            // pagination: {
+            //   page: currentPage,
+            //   pageSize: pageSize
+            // }
           }),
         });
         
@@ -355,33 +382,44 @@ export default function TruckList({ refreshTrigger = 0, filters = {} }: TruckLis
     };
     
     fetchTrucks();
-  }, [refreshTrigger, filters, currentPage, pageSize]);
+  }, [refreshTrigger, filters, disableExternalFetching]);
 
-  // Handle page change
+  // Add a separate effect for client-side pagination
+  useEffect(() => {
+    // Only handle pagination client-side if we have the trucks data already
+    if (allTrucks.length > 0) {
+      const startIndex = (currentPage - 1) * pageSize;
+      const endIndex = startIndex + pageSize;
+      setTrucks(allTrucks.slice(startIndex, endIndex));
+    }
+  }, [currentPage, pageSize, allTrucks]);
+
+  // Handle page change - only use client-side pagination when external fetching is disabled
   const handlePageChange = (newPage: number) => {
     if (newPage >= 1 && newPage <= totalPages) {
       setCurrentPage(newPage);
       
-      // If we have all trucks loaded, we can paginate client-side 
-      // without waiting for the API call to complete
-      if (allTrucks.length > 0) {
+      // If external fetching is disabled or we have all trucks loaded, paginate client-side
+      if (disableExternalFetching || allTrucks.length > 0) {
         const startIndex = (newPage - 1) * pageSize;
         const endIndex = startIndex + pageSize;
         setTrucks(allTrucks.slice(startIndex, endIndex));
       }
+      // Otherwise, the page change will trigger the useEffect for API fetching
     }
   };
 
-  // Handle page size change
+  // Handle page size change - update client-side pagination if external fetching is disabled
   const handlePageSizeChange = (newSize: number) => {
     setPageSize(newSize);
     setCurrentPage(1); // Reset to first page when changing page size
     
     // Update pagination calculations and data
-    if (allTrucks.length > 0) {
+    if (disableExternalFetching || allTrucks.length > 0) {
       setTotalPages(Math.ceil(allTrucks.length / newSize));
       setTrucks(allTrucks.slice(0, newSize));
     }
+    // Otherwise, the page size change will trigger the useEffect for API fetching
   };
 
   return (
@@ -434,9 +472,9 @@ export default function TruckList({ refreshTrigger = 0, filters = {} }: TruckLis
                     </div>
                   </TableCell>
                   <TableCell>{truck.year}</TableCell>
-                  <TableCell>{truck.miles.toLocaleString()}</TableCell>
-                  <TableCell>${truck.price.toLocaleString()}</TableCell>
-                  <TableCell>{truck.location}</TableCell>
+                  <TableCell>{truck.mileage}</TableCell>
+                  <TableCell>${truck.retail_price}</TableCell>
+                  <TableCell>{truck.truck_location}</TableCell>
                   <TableCell className="text-right">
                     <Button 
                       variant="ghost" 
