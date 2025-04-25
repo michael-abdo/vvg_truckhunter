@@ -1,5 +1,4 @@
-import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, ScanCommand } from "@aws-sdk/lib-dynamodb";
+import { executeQuery } from "@/lib/db";
 
 interface FilterOptions {
   makes: Array<{ value: string; label: string }>;
@@ -23,11 +22,6 @@ let optionsCache: FilterOptions | null = null;
 let lastCacheUpdate: number = 0;
 const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
 
-const dynamoClient = new DynamoDBClient({
-  region: process.env.AWS_REGION || 'us-east-1',
-});
-const docClient = DynamoDBDocumentClient.from(dynamoClient);
-
 export async function getFilterOptions(): Promise<FilterOptions> {
   const now = Date.now();
   
@@ -41,101 +35,106 @@ export async function getFilterOptions(): Promise<FilterOptions> {
   
   // Fetch all distinct filter option values from the database
   try {
-    const scanCommand = new ScanCommand({
-      TableName: process.env.TRUCK_TABLE_NAME,
-      ProjectionExpression: "#manufacturer, #st, #price, #year, #mileage, #model, #transmission, #transmission_manufacturer, #engine_manufacturer, #engine_model, #cab",
-      ExpressionAttributeNames: {
-        "#manufacturer": "manufacturer",
-        "#st": "state", // Using #st instead of #state as an alias
-        "#price": "price",
-        "#year": "year",
-        "#mileage": "mileage",
-        "#model": "model",
-        "#transmission": "transmission",
-        "#transmission_manufacturer": "transmission_manufacturer",
-        "#engine_manufacturer": "engine_manufacturer",
-        "#engine_model": "engine_model",
-        "#cab": "cab"
-      }
-    });
+    const tableName = process.env.TRUCK_TABLE_NAME;
     
-    console.log('Sending scan command to DynamoDB:', JSON.stringify(scanCommand, null, 2));
+    console.log('Fetching filter options from MySQL table:', tableName);
     
-    const result = await docClient.send(scanCommand);
-    const items = result.Items || [];
+    // Using MySQL, we can optimize by querying distinct values for each column
+    // Create separate queries for each distinct value we need
     
-    console.log(`Retrieved ${items.length} items for filter options`);
+    // Get all manufacturers (makes)
+    const makesQuery = `SELECT DISTINCT manufacturer FROM ${tableName} WHERE manufacturer IS NOT NULL`;
+    const makesResult = await executeQuery<Array<{manufacturer: string}>>({ query: makesQuery });
+    const makes = new Set<string>(makesResult.map(row => row.manufacturer));
     
-    // Extract unique values for each option type
-    const makes = new Set<string>();
-    const states = new Set<string>();
+    // Get all states
+    const statesQuery = `SELECT DISTINCT state FROM ${tableName} WHERE state IS NOT NULL`;
+    const statesResult = await executeQuery<Array<{state: string}>>({ query: statesQuery });
+    const states = new Set<string>(statesResult.map(row => row.state));
+    
+    // Get all models with their makes
+    const modelsQuery = `SELECT DISTINCT manufacturer, model FROM ${tableName} WHERE manufacturer IS NOT NULL AND model IS NOT NULL`;
+    const modelsResult = await executeQuery<Array<{manufacturer: string, model: string}>>({ query: modelsQuery });
+    
     const modelsByMake: Record<string, Set<string>> = {};
-    const transmissions = new Set<string>();
-    const transmissionManufacturers = new Set<string>();
-    const engineManufacturers = new Set<string>();
-    const engineModelsByMfr: Record<string, Set<string>> = {};
-    const cabTypes = new Set<string>();
-    let minYear: number | undefined;
-    let maxYear: number | undefined;
-    let minPrice: number | undefined;
-    let maxPrice: number | undefined;
-    let minMileage: number | undefined;
-    let maxMileage: number | undefined;
-    
-    items.forEach(item => {
-      // Collect makes (now from manufacturer field)
-      if (item.manufacturer) makes.add(item.manufacturer);
-      
-      // Collect states
-      if (item.state) states.add(item.state);
-      
-      // Collect models by manufacturer
-      if (item.manufacturer && item.model) {
-        if (!modelsByMake[item.manufacturer]) {
-          modelsByMake[item.manufacturer] = new Set<string>();
-        }
-        modelsByMake[item.manufacturer].add(item.model);
+    modelsResult.forEach(row => {
+      if (!modelsByMake[row.manufacturer]) {
+        modelsByMake[row.manufacturer] = new Set<string>();
       }
-      
-      // Track min/max year
-      if (item.year) {
-        const year = Number(item.year);
-        if (!isNaN(year)) {
-          minYear = minYear === undefined ? year : Math.min(minYear, year);
-          maxYear = maxYear === undefined ? year : Math.max(maxYear, year);
-        }
-      }
-      
-      // Track min/max price
-      if (item.price) {
-        const price = Number(item.price);
-        if (!isNaN(price)) {
-          minPrice = minPrice === undefined ? price : Math.min(minPrice, price);
-          maxPrice = maxPrice === undefined ? price : Math.max(maxPrice, price);
-        }
-      }
-      
-      // Track min/max mileage
-      if (item.mileage) {
-        const mileage = Number(item.mileage);
-        if (!isNaN(mileage)) {
-          minMileage = minMileage === undefined ? mileage : Math.min(minMileage, mileage);
-          maxMileage = maxMileage === undefined ? mileage : Math.max(maxMileage, mileage);
-        }
-      }
-      
-      // Collect new filter options
-      if (item.transmission) transmissions.add(item.transmission);
-      if (item.transmission_manufacturer) transmissionManufacturers.add(item.transmission_manufacturer);
-      if (item.engine_manufacturer) engineManufacturers.add(item.engine_manufacturer);
-      if (item.engine_model) {
-        if (!engineModelsByMfr[item.engine_manufacturer]) {
-          engineModelsByMfr[item.engine_manufacturer] = new Set<string>();
-        }
-        engineModelsByMfr[item.engine_manufacturer].add(item.engine_model);
-      }
-      if (item.cab) cabTypes.add(item.cab);
+      modelsByMake[row.manufacturer].add(row.model);
     });
+    
+    // Get min/max year
+    const yearQuery = `
+      SELECT 
+        MIN(year) as minYear,
+        MAX(year) as maxYear
+      FROM ${tableName}
+      WHERE year IS NOT NULL AND year > 0
+    `;
+    const yearResult = await executeQuery<Array<{minYear: number, maxYear: number}>>({ query: yearQuery });
+    const minYear = yearResult[0]?.minYear;
+    const maxYear = yearResult[0]?.maxYear;
+    
+    // Get min/max price
+    const priceQuery = `
+      SELECT 
+        MIN(price_clean) as minPrice,
+        MAX(price_clean) as maxPrice
+      FROM ${tableName}
+      WHERE price_clean IS NOT NULL AND price_clean > 0
+    `;
+    const priceResult = await executeQuery<Array<{minPrice: number, maxPrice: number}>>({ query: priceQuery });
+    const minPrice = priceResult[0]?.minPrice;
+    const maxPrice = priceResult[0]?.maxPrice;
+    
+    // Get min/max mileage
+    const mileageQuery = `
+      SELECT 
+        MIN(mileage_clean) as minMileage,
+        MAX(mileage_clean) as maxMileage
+      FROM ${tableName}
+      WHERE mileage_clean IS NOT NULL AND mileage_clean > 0
+    `;
+    const mileageResult = await executeQuery<Array<{minMileage: number, maxMileage: number}>>({ query: mileageQuery });
+    const minMileage = mileageResult[0]?.minMileage;
+    const maxMileage = mileageResult[0]?.maxMileage;
+    
+    // Get all transmissions
+    const transmissionsQuery = `SELECT DISTINCT transmission FROM ${tableName} WHERE transmission IS NOT NULL`;
+    const transmissionsResult = await executeQuery<Array<{transmission: string}>>({ query: transmissionsQuery });
+    const transmissions = new Set<string>(transmissionsResult.map(row => row.transmission));
+    
+    // Get all transmission manufacturers
+    const transmissionMfrQuery = `SELECT DISTINCT transmission_manufacturer FROM ${tableName} WHERE transmission_manufacturer IS NOT NULL`;
+    const transmissionMfrResult = await executeQuery<Array<{transmission_manufacturer: string}>>({ query: transmissionMfrQuery });
+    const transmissionManufacturers = new Set<string>(transmissionMfrResult.map(row => row.transmission_manufacturer));
+    
+    // Get all engine manufacturers
+    const engineMfrQuery = `SELECT DISTINCT engine_manufacturer FROM ${tableName} WHERE engine_manufacturer IS NOT NULL`;
+    const engineMfrResult = await executeQuery<Array<{engine_manufacturer: string}>>({ query: engineMfrQuery });
+    const engineManufacturers = new Set<string>(engineMfrResult.map(row => row.engine_manufacturer));
+    
+    // Get all engine models with their manufacturers
+    const engineModelsQuery = `
+      SELECT DISTINCT engine_manufacturer, engine_model 
+      FROM ${tableName} 
+      WHERE engine_manufacturer IS NOT NULL AND engine_model IS NOT NULL
+    `;
+    const engineModelsResult = await executeQuery<Array<{engine_manufacturer: string, engine_model: string}>>({ query: engineModelsQuery });
+    
+    const engineModelsByMfr: Record<string, Set<string>> = {};
+    engineModelsResult.forEach(row => {
+      if (!engineModelsByMfr[row.engine_manufacturer]) {
+        engineModelsByMfr[row.engine_manufacturer] = new Set<string>();
+      }
+      engineModelsByMfr[row.engine_manufacturer].add(row.engine_model);
+    });
+    
+    // Get all cab types
+    const cabQuery = `SELECT DISTINCT cab FROM ${tableName} WHERE cab IS NOT NULL`;
+    const cabResult = await executeQuery<Array<{cab: string}>>({ query: cabQuery });
+    const cabTypes = new Set<string>(cabResult.map(row => row.cab));
     
     // Convert sets to arrays of objects with value and label properties
     const formattedMakes = Array.from(makes).map(make => ({

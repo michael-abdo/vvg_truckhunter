@@ -32,73 +32,20 @@ const StatItem = ({ icon, label, value, change, loading }: StatItemProps) => (
 )
 
 interface TruckSummaryStatsProps {
-  trucks: any[] // Array of truck objects from the API
-  refreshTrigger?: number // Optional now that we're not making API calls
+  trucks?: any[] // Array of truck objects from the API
+  stats?: any // Statistics from the /api/trucks/stats endpoint
+  refreshTrigger?: number // Optional prop to trigger refresh
 }
 
-export default function TruckSummaryStats({ trucks = [] }: TruckSummaryStatsProps) {
-  const [stats, setStats] = useState({
-    averagePrice: 0,
-    averageYear: 0,
-    averageMileage: 0,
-    averageHorsepower: 0,
-    priceRange: { min: 0, max: 0 },
-  })
+export default function TruckSummaryStats({ trucks = [], stats = null }: TruckSummaryStatsProps) {
   const [loading, setLoading] = useState(true)
   const [hasData, setHasData] = useState(false)
 
-  // Calculate statistics whenever trucks data changes
   useEffect(() => {
-    // Reset hasData flag
-    setHasData(false)
-    
-    // Don't calculate if no trucks data
-    if (!trucks || trucks.length === 0) {
-      setLoading(false)
-      // Reset stats to zero when there are no trucks
-      setStats({
-        averagePrice: 0,
-        averageYear: 0,
-        averageMileage: 0,
-        averageHorsepower: 0,
-        priceRange: { min: 0, max: 0 },
-      })
-      return
-    }
-
-    try {
-      setLoading(true)
-      
-      // Extract relevant fields from each truck
-      const prices = trucks.map(truck => truck.price_clean).filter(price => price !== undefined && price !== null)
-      const years = trucks.map(truck => truck.year_clean).filter(year => year !== undefined && year !== null)
-      const mileages = trucks.map(truck => truck.mileage_clean).filter(mileage => mileage !== undefined && mileage !== null)
-      const horsepowers = trucks.map(truck => truck.horsepower_clean).filter(hp => hp !== undefined && hp !== null)
-      
-      // Calculate averages
-      const calculateAverage = (array: number[]) => 
-        array.length ? array.reduce((sum, val) => sum + val, 0) / array.length : 0
-      
-      const minPrice = prices.length ? Math.min(...prices) : 0
-      const maxPrice = prices.length ? Math.max(...prices) : 0
-      
-      // Set the statistics
-      setStats({
-        averagePrice: calculateAverage(prices),
-        averageYear: calculateAverage(years),
-        averageMileage: calculateAverage(mileages),
-        averageHorsepower: calculateAverage(horsepowers),
-        priceRange: { min: minPrice, max: maxPrice }
-      })
-      
-      // Set hasData flag if we have valid data
-      setHasData(prices.length > 0 || years.length > 0 || mileages.length > 0)
-    } catch (error) {
-      console.error("Error calculating truck statistics:", error)
-    } finally {
-      setLoading(false)
-    }
-  }, [trucks])
+    // Check if we have valid statistics data
+    setHasData(!!stats && stats.count > 0)
+    setLoading(false)
+  }, [stats, trucks])
 
   // Format the price with a dollar sign and commas
   const formatPrice = (price: number) => {
@@ -122,29 +69,29 @@ export default function TruckSummaryStats({ trucks = [] }: TruckSummaryStatsProp
             <StatItem
               icon={<CircleDollarSign className="h-5 w-5 text-primary" />}
               label="Average Price"
-              value={formatPrice(stats.averagePrice)}
+              value="$0"
               loading={loading}
             />
             <StatItem
               icon={<Calendar className="h-5 w-5 text-primary" />}
               label="Average Year"
-              value={stats.averageYear.toFixed(1)}
+              value="0"
               loading={loading}
             />
             <StatItem
               icon={<Gauge className="h-5 w-5 text-primary" />}
               label="Average Mileage"
-              value={formatMileage(stats.averageMileage)}
+              value="0 mi"
               loading={loading}
             />
             <StatItem
               icon={<BarChart2 className="h-5 w-5 text-primary" />}
-              label="Average Horsepower"
-              value={`${stats.averageHorsepower.toFixed(0)} HP`}
+              label="Price Range"
+              value="$0 - $0"
               loading={loading}
             />
           </div>
-        ) : !trucks || trucks.length === 0 ? (
+        ) : !hasData ? (
           // Show no data available message
           <div className="flex flex-col items-center justify-center py-6 text-center">
             <div className="rounded-full bg-muted p-3 mb-3">
@@ -162,35 +109,57 @@ export default function TruckSummaryStats({ trucks = [] }: TruckSummaryStatsProp
               <StatItem
                 icon={<CircleDollarSign className="h-5 w-5 text-primary" />}
                 label="Average Price"
-                value={formatPrice(stats.averagePrice)}
+                value={formatPrice(Math.round(Number(stats.price.avg) || 0))}
                 loading={loading}
               />
               <StatItem
                 icon={<Calendar className="h-5 w-5 text-primary" />}
                 label="Average Year"
-                value={stats.averageYear.toFixed(1)}
+                value={Math.round(Number(stats.year.avg) || 0)}
                 loading={loading}
               />
               <StatItem
                 icon={<Gauge className="h-5 w-5 text-primary" />}
                 label="Average Mileage"
-                value={formatMileage(stats.averageMileage)}
+                value={formatMileage(Math.round(Number(stats.mileage.avg) || 0))}
                 loading={loading}
               />
               <StatItem
                 icon={<BarChart2 className="h-5 w-5 text-primary" />}
-                label="Average Horsepower"
-                value={`${stats.averageHorsepower.toFixed(0)} HP`}
+                label="Price Range"
+                value={`${formatPrice(stats.price.min || 0)} - ${formatPrice(stats.price.max || 0)}`}
                 loading={loading}
               />
             </div>
             
             <div className="mt-6 border-t pt-6">
-              <p className="text-sm text-muted-foreground">
-                Price Range: <span className="font-medium">{formatPrice(stats.priceRange.min)}</span> to <span className="font-medium">{formatPrice(stats.priceRange.max)}</span>
-              </p>
-              <p className="text-sm text-muted-foreground mt-1">
-                Based on {trucks.length} trucks matching your criteria
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                <div>
+                  <h4 className="font-medium text-sm mb-2">Top Manufacturers</h4>
+                  <ul className="space-y-1">
+                    {stats.topManufacturers && stats.topManufacturers.map((item: any, index: number) => (
+                      <li key={index} className="text-sm flex justify-between">
+                        <span>{item.manufacturer}</span>
+                        <span className="text-muted-foreground">{item.count} trucks</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <h4 className="font-medium text-sm mb-2">Top Models</h4>
+                  <ul className="space-y-1">
+                    {stats.topModels && stats.topModels.map((item: any, index: number) => (
+                      <li key={index} className="text-sm flex justify-between">
+                        <span>{item.model}</span>
+                        <span className="text-muted-foreground">{item.count} trucks</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+              
+              <p className="text-sm text-muted-foreground mt-4 pt-4 border-t">
+                Based on {stats.count} trucks matching your criteria
               </p>
             </div>
           </>

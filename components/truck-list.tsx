@@ -24,6 +24,13 @@ interface Truck {
   engineManufacturer?: string;
   engineModel?: string;
   cab?: string;
+  // Add these properties to fix type errors
+  manufacturer?: string;
+  mileage?: number;
+  retail_price?: number;
+  truck_location?: string;
+  url?: string;
+  engine_model?: string;
 }
 
 // Filter type definition
@@ -225,202 +232,175 @@ interface TruckListProps {
   filters?: TruckFilters;
   trucks?: Truck[];
   disableExternalFetching?: boolean;
+  currentPage?: number;
+  pageSize?: number;
+  onPageChange?: (page: number) => void;
+  onPageSizeChange?: (pageSize: number) => void;
+  totalItems?: number;
+  totalPages?: number;
+  loading?: boolean;
 }
 
-export default function TruckList({ 
-  refreshTrigger = 0, 
-  filters = {}, 
-  trucks: propTrucks = [], 
-  disableExternalFetching = false 
-}: TruckListProps) {
-  const [trucks, setTrucks] = useState<Truck[]>([])
-  const [allTrucks, setAllTrucks] = useState<Truck[]>([]) // Store all trucks for client-side pagination
-  const [loading, setLoading] = useState<boolean>(false)
-  const [error, setError] = useState<string | null>(null)
+// Add this skeleton component 
+const TruckCardSkeleton = () => {
+  return (
+    <div className="border rounded-lg p-4 shadow-sm">
+      <div className="space-y-3">
+        <div className="h-4 bg-gray-200 rounded animate-pulse w-3/4"></div>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <div className="h-3 bg-gray-200 rounded animate-pulse w-1/2"></div>
+            <div className="h-3 bg-gray-200 rounded animate-pulse w-3/4"></div>
+          </div>
+          <div className="space-y-2">
+            <div className="h-3 bg-gray-200 rounded animate-pulse w-2/3"></div>
+            <div className="h-3 bg-gray-200 rounded animate-pulse w-1/2"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const TruckList: React.FC<TruckListProps> = ({
+  trucks: propTrucks = [],
+  filters = {},
+  disableExternalFetching = false,
+  currentPage = 1,
+  pageSize = 10,
+  onPageChange,
+  onPageSizeChange,
+  totalItems: propTotalItems,
+  totalPages: propTotalPages,
+  loading: propLoading,
+}) => {
+  // State for tracking which truck cards are expanded
+  const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
   
-  // Add pagination state
-  const [currentPage, setCurrentPage] = useState<number>(1)
-  const [pageSize, setPageSize] = useState<number>(5)
-  const [totalItems, setTotalItems] = useState<number>(0)
-  const [totalPages, setTotalPages] = useState<number>(1)
-
-  // Initialize with trucks from props if available
-  useEffect(() => {
-    if (disableExternalFetching) {
-      // Use trucks from props when external fetching is disabled
-      setAllTrucks(propTrucks || []);
-      setTotalItems(propTrucks?.length || 0);
-      setTotalPages(Math.ceil((propTrucks?.length || 0) / pageSize));
-      
-      // Set current page of trucks
-      const startIndex = (currentPage - 1) * pageSize;
-      const endIndex = startIndex + pageSize;
-      setTrucks(propTrucks?.slice(startIndex, endIndex) || []);
-    }
-  }, [propTrucks, disableExternalFetching, currentPage, pageSize]);
-
-  // Remove currentPage and pageSize from the dependency array to prevent API calls on pagination
-  useEffect(() => {
-    // Skip API fetching if it's disabled
-    if (disableExternalFetching) {
-      return;
-    }
-    
-    const fetchTrucks = async () => {
-      try {
-        setLoading(true);
-        
-        // Call the server-side API endpoint
-        const response = await fetch('/api/trucks', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ 
-            filters,
-            // Don't include pagination here - we'll handle it client-side
-            // pagination: {
-            //   page: currentPage,
-            //   pageSize: pageSize
-            // }
-          }),
-        });
-        
-        const data = await response.json();
-        
-        if (data.success && data.trucks && data.trucks.length > 0) {
-          // Map the fetched trucks to the expected format
-          const formattedTrucks: Truck[] = data.trucks.map((truck: any, index: number) => ({
-            id: truck.id || index + 1,
-            make: truck.manufacturer || "",
-            model: truck.model || "",
-            year: truck.year || 0,
-            miles: truck.mileage || 0,
-            price: truck.retail_price || 0,
-            location: truck.truck_location || "Unknown",
-            condition: truck.condition || "Unknown",
-            daysListed: truck.daysListed || Math.floor(Math.random() * 45) + 1,
-            truckPaperUrl: truck.url || "#",
-            horsepower: truck.horsepower || "",
-            transmission: truck.transmission || "",
-            transmissionManufacturer: truck.transmission_manufacturer || "",
-            engineManufacturer: truck.engine_manufacturer || "",
-            engineModel: truck.engine_model || "",
-            cab: truck.cab || ""
-          }));
-          
-          // Store all trucks for client-side pagination if needed
-          setAllTrucks(formattedTrucks);
-          
-          // Set pagination data from API response
-          if (data.pagination) {
-            setTotalItems(data.pagination.totalItems || formattedTrucks.length);
-            setTotalPages(data.pagination.totalPages || Math.ceil(formattedTrucks.length / pageSize));
-            
-            // If API handles pagination, use the returned trucks directly
-            setTrucks(formattedTrucks);
-          } else {
-            // If API doesn't handle pagination, do it client-side
-            setTotalItems(formattedTrucks.length);
-            setTotalPages(Math.ceil(formattedTrucks.length / pageSize));
-            
-            // Manually paginate
-            const startIndex = (currentPage - 1) * pageSize;
-            const endIndex = startIndex + pageSize;
-            setTrucks(formattedTrucks.slice(startIndex, endIndex));
-          }
-        } else {
-          // Fallback to generating random trucks if no results
-          const totalTrucks = 15; // Generate enough for a few pages
-          const newTrucks: Truck[] = Array(totalTrucks)
-            .fill(null)
-            .map((_, index) => generateRandomTruck(index + 1, filters));
-            
-          setAllTrucks(newTrucks);
-          setTotalItems(newTrucks.length);
-          setTotalPages(Math.ceil(newTrucks.length / pageSize));
-          
-          // Paginate the generated trucks
-          const startIndex = (currentPage - 1) * pageSize;
-          const endIndex = startIndex + pageSize;
-          setTrucks(newTrucks.slice(startIndex, endIndex));
-        }
-        
-        setError(null);
-      } catch (err) {
-        console.error("Error fetching trucks:", err);
-        setError("Failed to load truck data");
-        
-        // Fallback to generating random trucks on error
-        const totalTrucks = 15; // Generate enough for a few pages
-        const newTrucks: Truck[] = Array(totalTrucks)
-          .fill(null)
-          .map((_, index) => generateRandomTruck(index + 1, filters));
-          
-        setAllTrucks(newTrucks);
-        setTotalItems(newTrucks.length);
-        setTotalPages(Math.ceil(newTrucks.length / pageSize));
-        
-        // Paginate the generated trucks
-        const startIndex = (currentPage - 1) * pageSize;
-        const endIndex = startIndex + pageSize;
-        setTrucks(newTrucks.slice(startIndex, endIndex));
-      } finally {
-        setLoading(false);
-        
-        // Add visual indication that the data has changed
-        setTimeout(() => {
-          const rows = document.querySelectorAll("tbody tr");
-          rows.forEach((row) => {
-            row.classList.add("bg-green-50");
-            setTimeout(() => {
-              row.classList.remove("bg-green-50");
-            }, 1000);
-          });
-        }, 100);
+  // If external fetching is disabled, use the provided trucks directly
+  // Otherwise, we'll manage trucks internally
+  const [trucks, setTrucks] = useState<Truck[]>(disableExternalFetching ? propTrucks : []);
+  
+  // Pagination state
+  const [page, setPage] = useState(currentPage);
+  const [itemsPerPage, setItemsPerPage] = useState(pageSize);
+  
+  // Loading state - initialize with propLoading if provided, otherwise false
+  const [loading, setLoading] = useState(propLoading || false);
+  
+  // For when we need to manage pagination internally
+  const [internalTotalItems, setInternalTotalItems] = useState(propTrucks.length);
+  const [internalTotalPages, setInternalTotalPages] = useState(
+    Math.max(1, Math.ceil(propTrucks.length / pageSize))
+  );
+  
+  // Use provided total values or our internal calculations
+  const totalItems = propTotalItems !== undefined ? propTotalItems : internalTotalItems;
+  const totalPages = propTotalPages !== undefined ? propTotalPages : internalTotalPages;
+  
+  // Function to toggle card expansion
+  const toggleCard = (truckId: string) => {
+    setExpandedCards(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(truckId)) {
+        newSet.delete(truckId);
+      } else {
+        newSet.add(truckId);
       }
-    };
-    
-    fetchTrucks();
-  }, [refreshTrigger, filters, disableExternalFetching]);
-
-  // Add a separate effect for client-side pagination
+      return newSet;
+    });
+  };
+  
+  // Update internal state when props change
   useEffect(() => {
-    // Only handle pagination client-side if we have the trucks data already
-    if (allTrucks.length > 0) {
-      const startIndex = (currentPage - 1) * pageSize;
-      const endIndex = startIndex + pageSize;
-      setTrucks(allTrucks.slice(startIndex, endIndex));
+    if (disableExternalFetching) {
+      // When external fetching is disabled, always use the props directly
+      console.log("TruckList: Using trucks from props:", propTrucks);
+      setTrucks(propTrucks || []);
+      
+      // Update our internal pagination calculations
+      setInternalTotalItems(propTrucks.length);
+      setInternalTotalPages(Math.max(1, Math.ceil(propTrucks.length / itemsPerPage)));
     }
-  }, [currentPage, pageSize, allTrucks]);
-
-  // Handle page change - only use client-side pagination when external fetching is disabled
+    
+    // Always sync with the parent component's current page
+    setPage(currentPage);
+    setItemsPerPage(pageSize);
+    
+    // Update loading state from props
+    if (propLoading !== undefined) {
+      setLoading(propLoading);
+    }
+  }, [propTrucks, disableExternalFetching, currentPage, pageSize, itemsPerPage, propLoading]);
+  
+  // Handle page change
   const handlePageChange = (newPage: number) => {
-    if (newPage >= 1 && newPage <= totalPages) {
-      setCurrentPage(newPage);
+    setPage(newPage);
+    
+    if (onPageChange) {
+      // If we have an external handler, use it
+      onPageChange(newPage);
+    } else if (disableExternalFetching) {
+      // For client-side pagination, update our view of the data
+      // This would slice the propTrucks array based on the new page
+      const startIndex = (newPage - 1) * itemsPerPage;
+      const paginatedTrucks = propTrucks.slice(startIndex, startIndex + itemsPerPage);
+      setTrucks(paginatedTrucks);
+    }
+  };
+  
+  // Handle page size change
+  const handlePageSizeChange = (newSize: number) => {
+    setItemsPerPage(newSize);
+    
+    if (onPageSizeChange) {
+      // If we have an external handler, use it
+      onPageSizeChange(newSize);
+    } else if (disableExternalFetching) {
+      // For client-side pagination, recalculate total pages and update our view
+      const newTotalPages = Math.max(1, Math.ceil(propTrucks.length / newSize));
+      setInternalTotalPages(newTotalPages);
       
-      // If external fetching is disabled or we have all trucks loaded, paginate client-side
-      if (disableExternalFetching || allTrucks.length > 0) {
-        const startIndex = (newPage - 1) * pageSize;
-        const endIndex = startIndex + pageSize;
-        setTrucks(allTrucks.slice(startIndex, endIndex));
-      }
-      // Otherwise, the page change will trigger the useEffect for API fetching
+      // Reset to page 1 and update truck list
+      setPage(1);
+      const paginatedTrucks = propTrucks.slice(0, newSize);
+      setTrucks(paginatedTrucks);
     }
   };
 
-  // Handle page size change - update client-side pagination if external fetching is disabled
-  const handlePageSizeChange = (newSize: number) => {
-    setPageSize(newSize);
-    setCurrentPage(1); // Reset to first page when changing page size
-    
-    // Update pagination calculations and data
-    if (disableExternalFetching || allTrucks.length > 0) {
-      setTotalPages(Math.ceil(allTrucks.length / newSize));
-      setTrucks(allTrucks.slice(0, newSize));
+  // When page or filters change, fetch new trucks (if external fetching is enabled)
+  useEffect(() => {
+    if (disableExternalFetching) {
+      return; // Skip fetching if we're using externally provided data
     }
-    // Otherwise, the page size change will trigger the useEffect for API fetching
-  };
+    
+    // Here would be the code to fetch trucks from API
+    // For this component, we'll assume that's handled by the parent
+
+  }, [page, filters, disableExternalFetching]);
+  
+  // If loading, show skeleton
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        <div className="grid grid-cols-1 gap-4">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <TruckCardSkeleton key={i} />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // If no trucks found, show message
+  if (trucks.length === 0) {
+    return (
+      <div className="text-center py-10">
+        <h3 className="text-lg font-medium text-gray-900">No trucks found</h3>
+        <p className="mt-1 text-sm text-gray-500">Try adjusting your search filters</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -437,81 +417,62 @@ export default function TruckList({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {loading ? (
-              // Show loading state
-              Array(pageSize).fill(null).map((_, index) => (
-                <TableRow key={`loading-${index}`}>
-                  <TableCell colSpan={6} className="text-center py-4">
-                    <div className="flex justify-center items-center h-6 opacity-50">
-                      <div className="animate-pulse h-4 w-32 bg-muted rounded"></div>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))
-            ) : trucks && trucks.length > 0 ? (
-              trucks.map((truck) => (
-                <TableRow key={truck.id} className="transition-colors duration-300">
-                  <TableCell className="font-medium">
-                    <div>
-                      {truck.make || truck.manufacturer} {truck.model}
-                    </div>
-                    <div className="flex items-center gap-2 mt-1">
+            {trucks.map((truck) => (
+              <TableRow key={truck.id} className="transition-colors duration-300">
+                <TableCell className="font-medium">
+                  <div>
+                    {truck.make || truck.manufacturer} {truck.model}
+                  </div>
+                  <div className="flex items-center gap-2 mt-1">
+                    <Badge variant="outline" className="text-xs">
+                      {truck.condition}
+                    </Badge>
+                    {(truck.horsepower || truck.engine_model) && (
                       <Badge variant="outline" className="text-xs">
-                        {truck.condition}
+                        {truck.horsepower || truck.engine_model}
                       </Badge>
-                      {(truck.horsepower || truck.engine_model) && (
-                        <Badge variant="outline" className="text-xs">
-                          {truck.horsepower || truck.engine_model}
-                        </Badge>
-                      )}
-                      {truck.cab && (
-                        <Badge variant="outline" className="text-xs">
-                          {truck.cab}
-                        </Badge>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell>{truck.year}</TableCell>
-                  <TableCell>{truck.miles || truck.mileage}</TableCell>
-                  <TableCell>{truck.price || truck.retail_price}</TableCell>
-                  <TableCell>{truck.location || truck.truck_location}</TableCell>
-                  <TableCell className="text-right">
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      asChild
+                    )}
+                    {truck.cab && (
+                      <Badge variant="outline" className="text-xs">
+                        {truck.cab}
+                      </Badge>
+                    )}
+                  </div>
+                </TableCell>
+                <TableCell>{truck.year}</TableCell>
+                <TableCell>{truck.miles || truck.mileage}</TableCell>
+                <TableCell>{truck.price || truck.retail_price}</TableCell>
+                <TableCell>{truck.location || truck.truck_location}</TableCell>
+                <TableCell className="text-right">
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    asChild
+                  >
+                    <a 
+                      href={truck.truckPaperUrl || truck.url} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
                     >
-                      <a 
-                        href={truck.truckPaperUrl || truck.url} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                      >
-                        Details
-                        <ChevronRight className="ml-1 h-4 w-4" />
-                      </a>
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center py-4">
-                  No trucks found matching your criteria
+                      Details
+                      <ChevronRight className="ml-1 h-4 w-4" />
+                    </a>
+                  </Button>
                 </TableCell>
               </TableRow>
-            )}
+            ))}
           </TableBody>
         </Table>
       </div>
 
       {/* Pagination controls */}
       {totalItems > 0 && (
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center space-x-2">
             <span className="text-sm text-muted-foreground">Show</span>
             <select 
               className="h-8 w-16 rounded-md border border-input bg-background px-2 text-sm"
-              value={pageSize}
+              value={itemsPerPage}
               onChange={(e) => handlePageSizeChange(Number(e.target.value))}
               disabled={loading}
             >
@@ -523,61 +484,139 @@ export default function TruckList({
           </div>
           
           <div className="text-sm text-muted-foreground">
-            Showing {Math.min((currentPage - 1) * pageSize + 1, totalItems)} to {Math.min(currentPage * pageSize, totalItems)} of {totalItems} entries
+            Showing {Math.min((page - 1) * itemsPerPage + 1, totalItems)} to {Math.min(page * itemsPerPage, totalItems)} of {totalItems} entries
           </div>
           
           <div className="flex items-center space-x-2">
+            {/* First page button */}
             <Button 
               variant="outline" 
               size="sm" 
-              onClick={() => handlePageChange(currentPage - 1)}
-              disabled={currentPage === 1 || loading}
+              onClick={() => handlePageChange(1)}
+              disabled={page === 1 || loading}
+              className="hidden sm:flex"
+            >
+              First
+            </Button>
+
+            {/* Previous button */}
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => handlePageChange(page - 1)}
+              disabled={page === 1 || loading}
             >
               Previous
             </Button>
             
             {/* Page numbers */}
             <div className="flex items-center space-x-1">
-              {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-                // Show pages around current page
-                let pageNum = currentPage;
-                if (totalPages <= 5) {
-                  pageNum = i + 1;
-                } else if (currentPage <= 3) {
-                  pageNum = i + 1;
-                } else if (currentPage >= totalPages - 2) {
-                  pageNum = totalPages - 4 + i;
-                } else {
-                  pageNum = currentPage - 2 + i;
+              {(() => {
+                // Calculate which page numbers to show
+                let startPage = 1;
+                let endPage = totalPages;
+                
+                if (totalPages > 5) {
+                  // Always show 5 pages
+                  if (page <= 3) {
+                    // Near the start
+                    startPage = 1;
+                    endPage = 5;
+                  } else if (page >= totalPages - 2) {
+                    // Near the end
+                    startPage = totalPages - 4;
+                    endPage = totalPages;
+                  } else {
+                    // In the middle
+                    startPage = page - 2;
+                    endPage = page + 2;
+                  }
                 }
                 
-                return (
-                  <Button
-                    key={pageNum}
-                    variant={currentPage === pageNum ? "default" : "outline"}
-                    size="sm"
-                    className="w-8 h-8 p-0"
-                    onClick={() => handlePageChange(pageNum)}
-                    disabled={loading}
-                  >
-                    {pageNum}
-                  </Button>
-                );
-              })}
+                // Generate page buttons
+                const pages = [];
+                for (let i = startPage; i <= endPage; i++) {
+                  pages.push(
+                    <Button
+                      key={i}
+                      variant={page === i ? "default" : "outline"}
+                      size="sm"
+                      className="w-8 h-8 p-0"
+                      onClick={() => handlePageChange(i)}
+                      disabled={loading}
+                    >
+                      {i}
+                    </Button>
+                  );
+                }
+                
+                // Add ellipsis for gaps
+                if (startPage > 1) {
+                  pages.unshift(
+                    <span key="start-ellipsis" className="px-2">
+                      ...
+                    </span>
+                  );
+                }
+                
+                if (endPage < totalPages) {
+                  pages.push(
+                    <span key="end-ellipsis" className="px-2">
+                      ...
+                    </span>
+                  );
+                }
+                
+                return pages;
+              })()}
             </div>
             
+            {/* Next button */}
             <Button 
               variant="outline" 
               size="sm" 
-              onClick={() => handlePageChange(currentPage + 1)}
-              disabled={currentPage === totalPages || loading}
+              onClick={() => handlePageChange(page + 1)}
+              disabled={page === totalPages || loading}
             >
               Next
             </Button>
+
+            {/* Last page button */}
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => handlePageChange(totalPages)}
+              disabled={page === totalPages || loading}
+              className="hidden sm:flex"
+            >
+              Last
+            </Button>
+
+            {/* Page jump for large page counts */}
+            {totalPages > 10 && (
+              <div className="hidden sm:flex items-center space-x-2 ml-2">
+                <span className="text-sm">Go to:</span>
+                <input
+                  type="number"
+                  min="1"
+                  max={totalPages}
+                  value={page}
+                  onChange={(e) => {
+                    const page = parseInt(e.target.value);
+                    if (page >= 1 && page <= totalPages) {
+                      handlePageChange(page);
+                    }
+                  }}
+                  className="w-16 h-8 rounded-md border border-input bg-background px-2 text-sm"
+                />
+              </div>
+            )}
           </div>
         </div>
       )}
     </div>
   )
 }
+
+export default TruckList
 

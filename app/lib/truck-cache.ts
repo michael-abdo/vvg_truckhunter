@@ -1,16 +1,4 @@
-import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, ScanCommand } from "@aws-sdk/lib-dynamodb";
-
-// Initialize the DynamoDB client
-const client = new DynamoDBClient({
-  region: process.env.AWS_REGION,
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID || "",
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || ""
-  }
-});
-
-const docClient = DynamoDBDocumentClient.from(client);
+import { executeQuery } from "@/lib/db";
 
 // Define the truck type
 interface Truck {
@@ -42,14 +30,12 @@ export async function getAllTrucks(): Promise<Truck[]> {
   if (trucksCache.length === 0 || now - lastFetchTime > CACHE_TTL) {
     console.log("Cache empty or expired. Refreshing from database...");
     try {
-      // Scan the truck table to get all truck records
-      const command = new ScanCommand({
-        TableName: process.env.TRUCK_TABLE_NAME,
-        // No limit - get all trucks
-      });
+      // Query MySQL to get all truck records
+      const tableName = process.env.TRUCK_TABLE_NAME;
+      const query = `SELECT * FROM ${tableName}`;
       
-      const response = await docClient.send(command);
-      trucksCache = response.Items as Truck[] || [];
+      const trucks = await executeQuery<Truck[]>({ query });
+      trucksCache = trucks;
       lastFetchTime = now;
       
       console.log(`Loaded ${trucksCache.length} trucks into cache`);
@@ -248,8 +234,7 @@ export async function filterTrucks(filters: any) {
     }
     
     // Check transmission manufacturer filter
-    if (filters.transmissionManufacturer && Array.isArray(filters.transmissionManufacturer) && 
-        filters.transmissionManufacturer.length > 0) {
+    if (filters.transmissionManufacturer && Array.isArray(filters.transmissionManufacturer) && filters.transmissionManufacturer.length > 0) {
       const truckTransMfr = truck.transmission_manufacturer?.toLowerCase();
       if (!truckTransMfr || !filters.transmissionManufacturer.some((mfr: string) => 
         truckTransMfr.includes(mfr.toLowerCase()))) {
@@ -258,8 +243,7 @@ export async function filterTrucks(filters: any) {
     }
     
     // Check engine manufacturer filter
-    if (filters.engineManufacturer && Array.isArray(filters.engineManufacturer) && 
-        filters.engineManufacturer.length > 0) {
+    if (filters.engineManufacturer && Array.isArray(filters.engineManufacturer) && filters.engineManufacturer.length > 0) {
       const truckEngineMfr = truck.engine_manufacturer?.toLowerCase();
       if (!truckEngineMfr || !filters.engineManufacturer.some((mfr: string) => 
         truckEngineMfr.includes(mfr.toLowerCase()))) {
@@ -279,12 +263,20 @@ export async function filterTrucks(filters: any) {
     // Check cab type filter
     if (filters.cab && Array.isArray(filters.cab) && filters.cab.length > 0) {
       const truckCab = truck.cab?.toLowerCase();
-      if (!truckCab || !filters.cab.some((cab: string) => truckCab.includes(cab.toLowerCase()))) {
+      if (!truckCab || !filters.cab.some((cab: string) => 
+        truckCab.includes(cab.toLowerCase()))) {
         return false;
       }
     }
     
-    // If all filters pass, include this truck
+    // All filters passed, include this truck
     return true;
   });
+}
+
+// Force a refresh of the cache
+export function refreshCache() {
+  trucksCache = [];
+  lastFetchTime = 0;
+  console.log("Truck cache cleared. Will be refreshed on next request.");
 } 

@@ -15,9 +15,24 @@ import { Badge } from "@/components/ui/badge"
 import TruckList from "./truck-list"
 import PriceChart from "./price-chart"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { queryVinInformation } from "@/lib/dynamodb"
+import { queryVinInformation } from "@/lib/mysql"
 import { states } from "../app/lib/states"
 import TruckSummaryStats from "./truck-summary-stats"
+
+// Add this interface to fix type errors in the filters object
+interface ExtendedTruckFilters {
+  makes: string[];
+  models: string[];
+  miles: { value: number; delta: number };
+  year: { value: number; delta: number };
+  horsepower: { value: number; delta: number };
+  transmission: string[];
+  transmissionManufacturer: string[];
+  engineManufacturer: string[];
+  engineModel: string[];
+  cab: string[];
+  states: string[];
+}
 
 export default function TruckFinder() {
   // State for dropdown options from database
@@ -56,12 +71,19 @@ export default function TruckFinder() {
   const [vinMatchFound, setVinMatchFound] = useState(false)
   const [vinSpecs, setVinSpecs] = useState<any>(null)
 
-  // Filter criteria state
-  const [filters, setFilters] = useState({
+  // Update filters state to use the proper type
+  const [filters, setFilters] = useState<ExtendedTruckFilters>({
     makes: [],
     models: [],
     miles: { value: 300000, delta: 100000 },
     year: { value: 2018, delta: 3 },
+    horsepower: { value: 450, delta: 50 },
+    transmission: [],
+    transmissionManufacturer: [],
+    engineManufacturer: [],
+    engineModel: [],
+    cab: [],
+    states: []
   })
 
   // Available models based on selected makes
@@ -114,7 +136,16 @@ export default function TruckFinder() {
   })
 
   // Add state to store truck data 
-  const [trucks, setTrucks] = useState([])
+  const [trucks, setTrucks] = useState<any[]>([])
+  const [truckStats, setTruckStats] = useState<any>(null)
+
+  // Add state for pagination in the parent component
+  const [currentPage, setCurrentPage] = useState<number>(1)
+  const [pageSize, setPageSize] = useState<number>(5)
+
+  // Add additional pagination state
+  const [totalItems, setTotalItems] = useState<number>(0)
+  const [totalPages, setTotalPages] = useState<number>(1)
 
   // Fetch filter options from database on component mount
   useEffect(() => {
@@ -142,7 +173,7 @@ export default function TruckFinder() {
           console.log("Cab Types:", data.cabTypes || []);
           
           // Set all dropdown options from the database
-          setTruckMakes(data.makes.map(make => ({ 
+          setTruckMakes(data.makes.map((make: { label: string }) => ({ 
             value: make.label.toLowerCase(),
             label: make.label 
           })) || [])
@@ -187,19 +218,22 @@ export default function TruckFinder() {
     fetchFilterOptions()
   }, [])
   
-  // Update the handleSearch function to get actual count from API
+  // Update the handleSearch function to fix the type error
   const handleSearch = async () => {
     try {
       setSearchLoading(true)
       
+      // Reset to first page when doing a new search
+      setCurrentPage(1)
+      
       // Use labels for makes and models but keep original values (codes) for states
       const selectedMakeLabels = selectedMakes.map(
-        make => truckMakes.find(m => m.value === make)?.label || make
+        (make: string) => truckMakes.find(m => m.value === make)?.label || make
       )
       
-      const newFilters = {
+      const newFilters: ExtendedTruckFilters = {
         makes: selectedMakeLabels, // Send labels instead of values
-        models: selectedModels.map(model => {
+        models: selectedModels.map((model: string) => {
           for (const make in truckModels) {
             const found = truckModels[make]?.find(m => m.value === model)
             if (found) return found.label
@@ -209,23 +243,23 @@ export default function TruckFinder() {
         miles: { value: miles, delta: milesDelta },
         year: { value: year, delta: yearDelta },
         horsepower: { value: horsepower, delta: horsepowerDelta },
-        transmission: selectedTransmissions.map(trans => 
+        transmission: selectedTransmissions.map((trans: string) => 
           transmissionTypes.find(t => t.value === trans)?.label || trans
         ),
-        transmissionManufacturer: selectedTransMfrs.map(mfr => 
+        transmissionManufacturer: selectedTransMfrs.map((mfr: string) => 
           transmissionManufacturers.find(m => m.value === mfr)?.label || mfr
         ),
-        engineManufacturer: selectedEngineMfrs.map(mfr => 
+        engineManufacturer: selectedEngineMfrs.map((mfr: string) => 
           engineManufacturers.find(m => m.value === mfr)?.label || mfr
         ),
-        engineModel: selectedEngineModels.map(model => {
+        engineModel: selectedEngineModels.map((model: string) => {
           for (const mfr in engineModels) {
             const found = engineModels[mfr]?.find(m => m.value === model)
             if (found) return found.label
           }
           return model
         }),
-        cab: selectedCabTypes.map(cab => 
+        cab: selectedCabTypes.map((cab: string) => 
           cabTypes.find(c => c.value === cab)?.label || cab
         ),
         states: selectedStates, // Send the state codes directly, not the labels
@@ -234,15 +268,15 @@ export default function TruckFinder() {
       // Log the filters being sent to the API
       console.log("Sending filters to API:", JSON.stringify(newFilters, null, 2));
       
-      setFilters(newFilters as any) // Using type assertion to fix TS error
+      setFilters(newFilters)
       setSearchPerformed(true)
       setSearchCount((prev) => prev + 1)
       setRefreshTrigger((prev) => prev + 1)
       
       console.log("Fetching truck data from APIs simultaneously...");
       
-      // Call both APIs simultaneously using Promise.all
-      const [countResponse, trucksResponse] = await Promise.all([
+      // Call all three APIs simultaneously using Promise.all
+      const [countResponse, trucksResponse, statsResponse] = await Promise.all([
         fetch('/api/trucks/count', {
           method: 'POST',
           headers: {
@@ -255,6 +289,17 @@ export default function TruckFinder() {
           headers: {
             'Content-Type': 'application/json',
           },
+          body: JSON.stringify({ 
+            filters: newFilters,
+            page: currentPage,
+            limit: pageSize
+          }),
+        }),
+        fetch('/api/trucks/stats', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
           body: JSON.stringify({ filters: newFilters }),
         })
       ]);
@@ -263,11 +308,14 @@ export default function TruckFinder() {
       const countData = await countResponse.json();
       console.log("Truck count API response:", countData);
       
-      if (countData.success) {
+      if (countData.count !== undefined) {
         console.log("Truck count:", countData.count);
         setTruckCount(countData.count);
-      } else {
+      } else if (countData.error) {
         console.error("Failed to get truck count:", countData.error);
+        setTruckCount(0);
+      } else {
+        console.error("Failed to get truck count: undefined");
         setTruckCount(0);
       }
       
@@ -276,10 +324,40 @@ export default function TruckFinder() {
       console.log("Truck data API response:", trucksData);
       
       if (trucksData.success && trucksData.trucks) {
+        // Object with trucks and pagination data
         setTrucks(trucksData.trucks);
-      } else {
+        
+        // Extract pagination data if available
+        if (trucksData.pagination) {
+          setTotalItems(trucksData.pagination.totalItems || 0);
+          setTotalPages(trucksData.pagination.totalPages || 1);
+          
+          // Ensure currentPage is within valid range
+          if (currentPage > trucksData.pagination.totalPages) {
+            setCurrentPage(1);
+          }
+        }
+      } else if (Array.isArray(trucksData)) {
+        // Direct array of trucks (less common case)
+        setTrucks(trucksData);
+      } else if (trucksData.error) {
         console.error("Failed to get truck data:", trucksData.error);
         setTrucks([]);
+      } else {
+        console.error("Failed to get truck data: undefined");
+        setTrucks([]);
+      }
+      
+      // Process statistics response
+      const statsData = await statsResponse.json();
+      console.log("Truck statistics API response:", statsData);
+      
+      // Update stats state if available
+      if (statsData && !statsData.error) {
+        setTruckStats(statsData);
+      } else {
+        console.error("Failed to get truck statistics:", statsData?.error || "undefined");
+        setTruckStats(null);
       }
       
     } catch (error) {
@@ -307,8 +385,9 @@ export default function TruckFinder() {
         // Log the full response for debugging
         console.log("VIN API Response:", data);
         
-        if (data.success && data.truck) {
-          const truckData = data.truck;
+        if (data && data.id) {
+          // If we have a truck object directly
+          const truckData = data;
           console.log("VIN match found:", truckData);
           setVinMatchFound(true);
           
@@ -316,14 +395,14 @@ export default function TruckFinder() {
           let mileageValue = 0;
           if (truckData.mileage) {
             // Remove commas and non-numeric characters, then parse as integer
-            mileageValue = parseInt(truckData.mileage.replace(/,/g, '').replace(/[^0-9]/g, ''));
+            mileageValue = parseInt(String(truckData.mileage).replace(/,/g, '').replace(/[^0-9]/g, ''));
           }
           
-          // Map the DynamoDB data to the vinSpecs format with correct field names and fallbacks
+          // Map the MySQL data to the vinSpecs format with correct field names and fallbacks
           const specs = {
             make: truckData.manufacturer || "",
             model: truckData.model || "",
-            year: truckData.year ? parseInt(truckData.year) : 0, // Ensure year is a number
+            year: truckData.year ? parseInt(String(truckData.year)) : 0, // Ensure year is a number
             miles: mileageValue, // Use the parsed mileage value
             trim: truckData.trim || "",
             engine: truckData.engine_model || "",
@@ -390,6 +469,99 @@ export default function TruckFinder() {
       setSearchPerformed(false);
     }
   }
+
+  // Add a function to handle page changes that will trigger a new API call
+  const handlePageChange = async (newPage: number) => {
+    console.log(`Changing to page ${newPage}`);
+    setCurrentPage(newPage);
+    
+    // Fetch new data for this page
+    try {
+      setSearchLoading(true);
+      
+      // Call the API with the current filters but new page number
+      const response = await fetch('/api/trucks', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          filters,
+          page: newPage,
+          limit: pageSize
+        }),
+      });
+      
+      const trucksData = await response.json();
+      console.log("Page change API response:", trucksData);
+      
+      if (trucksData.success && trucksData.trucks) {
+        setTrucks(trucksData.trucks);
+        
+        // Update pagination data if available
+        if (trucksData.pagination) {
+          setTotalItems(trucksData.pagination.totalItems || 0);
+          setTotalPages(trucksData.pagination.totalPages || 1);
+        }
+        
+        // Force refresh of the TruckList component
+        setRefreshTrigger(prev => prev + 1);
+      } else if (trucksData.error) {
+        console.error("Failed to get truck data:", trucksData.error);
+      }
+    } catch (error) {
+      console.error("Error getting truck data for page change:", error);
+    } finally {
+      setSearchLoading(false);
+    }
+  };
+
+  // Handle page size changes that will trigger a new API call
+  const handlePageSizeChange = async (newSize: number) => {
+    console.log(`Changing page size to ${newSize}`);
+    setPageSize(newSize);
+    
+    // Reset to page 1 when changing page size
+    setCurrentPage(1);
+    
+    // Fetch new data with the new page size
+    try {
+      setSearchLoading(true);
+      
+      const response = await fetch('/api/trucks', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          filters,
+          page: 1, // Reset to page 1
+          limit: newSize
+        }),
+      });
+      
+      const trucksData = await response.json();
+      
+      if (trucksData.success && trucksData.trucks) {
+        setTrucks(trucksData.trucks);
+        
+        // Update pagination data if available
+        if (trucksData.pagination) {
+          setTotalItems(trucksData.pagination.totalItems || 0);
+          setTotalPages(trucksData.pagination.totalPages || 1);
+        }
+        
+        // Force refresh of the TruckList component
+        setRefreshTrigger(prev => prev + 1);
+      } else if (trucksData.error) {
+        console.error("Failed to get truck data:", trucksData.error);
+      }
+    } catch (error) {
+      console.error("Error getting truck data for page size change:", error);
+    } finally {
+      setSearchLoading(false);
+    }
+  };
 
   // Render loading state if options are still loading
   if (loading) {
@@ -1257,7 +1429,7 @@ export default function TruckFinder() {
               {filters.transmission && filters.transmission.length > 0 && (
                 <div className="flex flex-wrap gap-1 items-center mt-1">
                   <span>Transmission:</span>
-                  {filters.transmission.map((t) => {
+                  {filters.transmission.map((t: string) => {
                     const label = transmissionTypes.find((type) => type.value === t)?.label;
                     return (
                       <Badge key={t} variant="secondary" className="text-xs">
@@ -1271,7 +1443,7 @@ export default function TruckFinder() {
               {filters.states && filters.states.length > 0 && (
                 <div className="flex flex-wrap gap-1 items-center mt-1">
                   <span>States:</span>
-                  {filters.states.map((stateCode) => {
+                  {filters.states.map((stateCode: string) => {
                     const stateInfo = states.find((s) => s.value === stateCode);
                     return (
                       <Badge key={stateCode} variant="secondary" className="text-xs">
@@ -1285,7 +1457,11 @@ export default function TruckFinder() {
           </div>
 
           {/* Pass trucks to the TruckSummaryStats component */}
-          <TruckSummaryStats trucks={trucks} refreshTrigger={refreshTrigger} />
+          <TruckSummaryStats 
+            trucks={trucks} 
+            stats={truckStats}
+            refreshTrigger={refreshTrigger} 
+          />
 
           <Card>
             <CardHeader>
@@ -1297,6 +1473,13 @@ export default function TruckFinder() {
                 filters={filters} 
                 key={`trucks-${refreshTrigger}`}
                 disableExternalFetching={true}
+                currentPage={currentPage}
+                pageSize={pageSize}
+                onPageChange={handlePageChange}
+                onPageSizeChange={handlePageSizeChange}
+                totalItems={totalItems}
+                totalPages={totalPages}
+                loading={searchLoading}
               />
             </CardContent>
           </Card>
