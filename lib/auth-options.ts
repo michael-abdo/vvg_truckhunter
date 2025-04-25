@@ -35,6 +35,10 @@ export const authOptions: NextAuthOptions = {
       return session;
     },
     async redirect({ url, baseUrl }) {
+      // Redirect to Microsoft authentication directly when trying to access any signin page
+      if (url.includes("/auth/signin")) {
+        return `${baseUrl}/sign-in`;
+      }
       // Allows relative callback URLs
       if (url.startsWith("/")) return `${baseUrl}${url}`;
       // Allows callback URLs on the same origin

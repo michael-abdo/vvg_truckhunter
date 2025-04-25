@@ -19,13 +19,6 @@ function SignInRedirect() {
   return (
     <div className="p-8 bg-white rounded-lg shadow-md w-full max-w-md text-center">
       <div className="flex flex-col items-center mb-8">
-        <Image 
-          src="/vvg-logo.jpg" 
-          alt="Company Logo" 
-          width={120} 
-          height={120}
-          className="mb-4"
-        />
         <h1 className="text-2xl font-bold">Redirecting to Sign In</h1>
         <p className="text-gray-500 mt-2">You are being redirected to Microsoft for authentication...</p>
       </div>
