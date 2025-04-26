@@ -14,12 +14,22 @@ export async function GET(request: Request) {
     const maxPrice = searchParams.get('maxPrice') || '';
     const makes = searchParams.get('makes') || '';
     const states = searchParams.get('states') || '';
+    const minHorsepower = searchParams.get('minHorsepower') || '';
+    const maxHorsepower = searchParams.get('maxHorsepower') || '';
+    const transmission = searchParams.get('transmission') || '';
+    const transmissionManufacturer = searchParams.get('transmissionManufacturer') || '';
+    const engineManufacturer = searchParams.get('engineManufacturer') || '';
+    const engineModel = searchParams.get('engineModel') || '';
+    const cabType = searchParams.get('cabType') || '';
     const page = parseInt(searchParams.get('page') || '1', 10);
     const limit = parseInt(searchParams.get('limit') || '20', 10);
     
     console.log('Filter params received:', { 
       searchTerm, minYear, maxYear, minMileage, maxMileage, 
-      minPrice, maxPrice, makes, states, page, limit 
+      minPrice, maxPrice, makes, states, 
+      minHorsepower, maxHorsepower, transmission, transmissionManufacturer,
+      engineManufacturer, engineModel, cabType,
+      page, limit 
     });
     
     // Parse the makes and states arrays
@@ -38,7 +48,14 @@ export async function GET(request: Request) {
       minPrice,
       maxPrice,
       makes,
-      states
+      states,
+      minHorsepower,
+      maxHorsepower,
+      transmission,
+      transmissionManufacturer,
+      engineManufacturer,
+      engineModel,
+      cabType
     });
     
     // Check if environment variable is set

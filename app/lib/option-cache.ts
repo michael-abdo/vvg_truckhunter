@@ -43,7 +43,7 @@ export async function getFilterOptions(): Promise<FilterOptions> {
     // Create separate queries for each distinct value we need
     
     // Get all manufacturers (makes)
-    const makesQuery = `SELECT DISTINCT manufacturer FROM ${tableName} WHERE manufacturer IS NOT NULL`;
+    const makesQuery = `SELECT DISTINCT manufacturer FROM ${tableName} WHERE manufacturer IS NOT NULL AND manufacturer != '0'`;
     const makesResult = await executeQuery<Array<{manufacturer: string}>>({ query: makesQuery });
     const makes = new Set<string>(makesResult.map(row => row.manufacturer));
     

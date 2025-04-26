@@ -63,6 +63,7 @@ export async function POST(request: Request) {
           SELECT manufacturer, COUNT(*) as count 
           FROM ${tableName} 
           ${whereClause} 
+          AND manufacturer != '0' AND manufacturer IS NOT NULL
           GROUP BY manufacturer 
           ORDER BY count DESC 
           LIMIT 10

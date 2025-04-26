@@ -12,7 +12,14 @@ export function buildSqlFilterFromParams({
   minPrice = '',
   maxPrice = '',
   makes = '',
-  states = ''
+  states = '',
+  minHorsepower = '',
+  maxHorsepower = '',
+  transmission = '',
+  transmissionManufacturer = '',
+  engineManufacturer = '',
+  engineModel = '',
+  cabType = ''
 }: {
   searchTerm?: string,
   minYear?: string,
@@ -22,14 +29,29 @@ export function buildSqlFilterFromParams({
   minPrice?: string,
   maxPrice?: string,
   makes?: string,
-  states?: string
+  states?: string,
+  minHorsepower?: string,
+  maxHorsepower?: string,
+  transmission?: string,
+  transmissionManufacturer?: string,
+  engineManufacturer?: string,
+  engineModel?: string,
+  cabType?: string
 }) {
   const whereConditions: string[] = [];
   const values: any[] = [];
   
-  // Parse the makes and states arrays
+  // Always exclude manufacturer = "0"
+  whereConditions.push("(manufacturer != '0' AND manufacturer IS NOT NULL)");
+  
+  // Parse the arrays
   const selectedMakes = makes ? JSON.parse(makes) : [];
   const selectedStates = states ? JSON.parse(states) : [];
+  const selectedTransmissions = transmission ? JSON.parse(transmission) : [];
+  const selectedTransMfrs = transmissionManufacturer ? JSON.parse(transmissionManufacturer) : [];
+  const selectedEngineMfrs = engineManufacturer ? JSON.parse(engineManufacturer) : [];
+  const selectedEngineModels = engineModel ? JSON.parse(engineModel) : [];
+  const selectedCabTypes = cabType ? JSON.parse(cabType) : [];
   
   // Search term filter (search in manufacturer, model, and description)
   if (searchTerm) {
@@ -70,6 +92,17 @@ export function buildSqlFilterFromParams({
     values.push(Number(maxPrice));
   }
   
+  // Horsepower range filter
+  if (minHorsepower) {
+    whereConditions.push("horsepower >= ?");
+    values.push(Number(minHorsepower));
+  }
+  
+  if (maxHorsepower) {
+    whereConditions.push("horsepower <= ?");
+    values.push(Number(maxHorsepower));
+  }
+  
   // Makes filter
   if (selectedMakes.length > 0) {
     const placeholders = selectedMakes.map(() => '?').join(', ');
@@ -84,6 +117,41 @@ export function buildSqlFilterFromParams({
     values.push(...selectedStates);
   }
   
+  // Transmission type filter
+  if (selectedTransmissions.length > 0) {
+    const placeholders = selectedTransmissions.map(() => '?').join(', ');
+    whereConditions.push(`transmission IN (${placeholders})`);
+    values.push(...selectedTransmissions);
+  }
+  
+  // Transmission manufacturer filter
+  if (selectedTransMfrs.length > 0) {
+    const placeholders = selectedTransMfrs.map(() => '?').join(', ');
+    whereConditions.push(`transmission_manufacturer IN (${placeholders})`);
+    values.push(...selectedTransMfrs);
+  }
+  
+  // Engine manufacturer filter
+  if (selectedEngineMfrs.length > 0) {
+    const placeholders = selectedEngineMfrs.map(() => '?').join(', ');
+    whereConditions.push(`engine_manufacturer IN (${placeholders})`);
+    values.push(...selectedEngineMfrs);
+  }
+  
+  // Engine model filter
+  if (selectedEngineModels.length > 0) {
+    const placeholders = selectedEngineModels.map(() => '?').join(', ');
+    whereConditions.push(`engine_model IN (${placeholders})`);
+    values.push(...selectedEngineModels);
+  }
+  
+  // Cab type filter
+  if (selectedCabTypes.length > 0) {
+    const placeholders = selectedCabTypes.map(() => '?').join(', ');
+    whereConditions.push(`cab IN (${placeholders})`);
+    values.push(...selectedCabTypes);
+  }
+  
   return {
     whereClause: whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '',
     values
@@ -96,6 +164,9 @@ export function buildSqlFilterFromParams({
 export function buildSqlFilterFromJsonBody(filters: any) {
   const whereConditions: string[] = [];
   const values: any[] = [];
+  
+  // Always exclude manufacturer = "0"
+  whereConditions.push("(manufacturer != '0' AND manufacturer IS NOT NULL)");
   
   // Makes filter
   if (filters.makes && filters.makes.length > 0) {
@@ -133,11 +204,11 @@ export function buildSqlFilterFromJsonBody(filters: any) {
   // Mileage range filter
   if (filters.mileageRange) {
     if (filters.mileageRange.min !== undefined) {
-      whereConditions.push("mileage >= ?");
+      whereConditions.push("mileage_clean >= ?");
       values.push(Number(filters.mileageRange.min));
     }
     if (filters.mileageRange.max !== undefined) {
-      whereConditions.push("mileage <= ?");
+      whereConditions.push("mileage_clean <= ?");
       values.push(Number(filters.mileageRange.max));
     }
   }
@@ -145,11 +216,11 @@ export function buildSqlFilterFromJsonBody(filters: any) {
   // Price range filter
   if (filters.priceRange) {
     if (filters.priceRange.min !== undefined) {
-      whereConditions.push("price >= ?");
+      whereConditions.push("price_clean >= ?");
       values.push(Number(filters.priceRange.min));
     }
     if (filters.priceRange.max !== undefined) {
-      whereConditions.push("price <= ?");
+      whereConditions.push("price_clean <= ?");
       values.push(Number(filters.priceRange.max));
     }
   }
@@ -178,6 +249,49 @@ export function buildSqlFilterFromJsonBody(filters: any) {
     const maxMiles = filters.miles.value + filters.miles.delta;
     whereConditions.push("mileage_clean BETWEEN ? AND ?");
     values.push(minMiles, maxMiles);
+  }
+  
+  // Horsepower filter with delta
+  if (filters.horsepower && typeof filters.horsepower.value === 'number' && typeof filters.horsepower.delta === 'number') {
+    const minHP = filters.horsepower.value - filters.horsepower.delta;
+    const maxHP = filters.horsepower.value + filters.horsepower.delta;
+    whereConditions.push("horsepower BETWEEN ? AND ?");
+    values.push(minHP, maxHP);
+  }
+  
+  // Transmission type filter
+  if (filters.transmission && Array.isArray(filters.transmission) && filters.transmission.length > 0) {
+    const placeholders = filters.transmission.map(() => '?').join(', ');
+    whereConditions.push(`transmission IN (${placeholders})`);
+    values.push(...filters.transmission);
+  }
+  
+  // Transmission manufacturer filter
+  if (filters.transmissionManufacturer && Array.isArray(filters.transmissionManufacturer) && filters.transmissionManufacturer.length > 0) {
+    const placeholders = filters.transmissionManufacturer.map(() => '?').join(', ');
+    whereConditions.push(`transmission_manufacturer IN (${placeholders})`);
+    values.push(...filters.transmissionManufacturer);
+  }
+  
+  // Engine manufacturer filter
+  if (filters.engineManufacturer && Array.isArray(filters.engineManufacturer) && filters.engineManufacturer.length > 0) {
+    const placeholders = filters.engineManufacturer.map(() => '?').join(', ');
+    whereConditions.push(`engine_manufacturer IN (${placeholders})`);
+    values.push(...filters.engineManufacturer);
+  }
+  
+  // Engine model filter
+  if (filters.engineModel && Array.isArray(filters.engineModel) && filters.engineModel.length > 0) {
+    const placeholders = filters.engineModel.map(() => '?').join(', ');
+    whereConditions.push(`engine_model IN (${placeholders})`);
+    values.push(...filters.engineModel);
+  }
+  
+  // Cab type filter
+  if (filters.cab && Array.isArray(filters.cab) && filters.cab.length > 0) {
+    const placeholders = filters.cab.map(() => '?').join(', ');
+    whereConditions.push(`cab IN (${placeholders})`);
+    values.push(...filters.cab);
   }
   
   return {
