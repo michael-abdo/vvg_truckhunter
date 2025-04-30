@@ -563,6 +563,49 @@ export default function TruckFinder() {
     }
   };
 
+  // Add a new reset function
+  const handleReset = () => {
+    // Reset all filter selections
+    setSelectedMakes([]);
+    setSelectedModels([]);
+    setMiles(300000);
+    setYear(2018);
+    setMilesDelta(100000);
+    setYearDelta(3);
+    setHorsepower(450);
+    setHorsepowerDelta(50);
+    setSelectedTransmissions([]);
+    setSelectedTransMfrs([]);
+    setSelectedEngineMfrs([]);
+    setSelectedEngineModels([]);
+    setSelectedCabTypes([]);
+    setSelectedStates([]);
+    
+    // Reset filters object
+    setFilters({
+      makes: [],
+      models: [],
+      miles: { value: 300000, delta: 100000 },
+      year: { value: 2018, delta: 3 },
+      horsepower: { value: 450, delta: 50 },
+      transmission: [],
+      transmissionManufacturer: [],
+      engineManufacturer: [],
+      engineModel: [],
+      cab: [],
+      states: []
+    });
+    
+    // Hide search results
+    setSearchPerformed(false);
+    
+    // Reset VIN search if applicable
+    setVin("");
+    setVinSearchPerformed(false);
+    setVinMatchFound(false);
+    setVinSpecs(null);
+  }
+
   // Render loading state if options are still loading
   if (loading) {
     return (
@@ -1253,16 +1296,21 @@ export default function TruckFinder() {
                   )}
                 </div>
               </div>
-              <Button disabled={searchLoading} className="w-full mt-6" onClick={handleSearch}>
-                {searchLoading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Searching...
-                  </>
-                ) : (
-                  "Find Similar Trucks"
-                )}
-              </Button>
+              <div className="flex justify-between items-center gap-2 mt-6">
+                <Button disabled={searchLoading} className="flex-1" onClick={handleSearch}>
+                  {searchLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Searching...
+                    </>
+                  ) : (
+                    "Find Similar Trucks"
+                  )}
+                </Button>
+                <Button variant="outline" onClick={handleReset}>
+                  Reset Search
+                </Button>
+              </div>
             </TabsContent>
             
             <TabsContent value="vin">
