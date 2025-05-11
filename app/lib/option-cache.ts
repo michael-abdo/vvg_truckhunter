@@ -9,6 +9,8 @@ interface FilterOptions {
   engineManufacturers: Array<{ value: string; label: string }>;
   engineModels: Record<string, Array<{ value: string; label: string }>>;
   cabTypes: Array<{ value: string; label: string }>;
+  truckTypes: Array<{ value: string; label: string }>;
+  sleeperTypes: Array<{ value: string; label: string }>;
   minYear?: number;
   maxYear?: number;
   minPrice?: number;
@@ -136,6 +138,16 @@ export async function getFilterOptions(): Promise<FilterOptions> {
     const cabResult = await executeQuery<Array<{cab: string}>>({ query: cabQuery });
     const cabTypes = new Set<string>(cabResult.map(row => row.cab));
     
+    // Get all truck types (sleeper vs day cab)
+    const truckTypeQuery = `SELECT DISTINCT truck_type FROM ${tableName} WHERE truck_type IS NOT NULL`;
+    const truckTypeResult = await executeQuery<Array<{truck_type: string}>>({ query: truckTypeQuery });
+    const truckTypes = new Set<string>(truckTypeResult.map(row => row.truck_type));
+    
+    // Get all sleeper types
+    const sleeperTypeQuery = `SELECT DISTINCT sleeper_type FROM ${tableName} WHERE sleeper_type IS NOT NULL`;
+    const sleeperTypeResult = await executeQuery<Array<{sleeper_type: string}>>({ query: sleeperTypeQuery });
+    const sleeperTypes = new Set<string>(sleeperTypeResult.map(row => row.sleeper_type));
+    
     // Convert sets to arrays of objects with value and label properties
     const formattedMakes = Array.from(makes).map(make => ({
       value: make.toLowerCase(),
@@ -188,6 +200,16 @@ export async function getFilterOptions(): Promise<FilterOptions> {
       label: cab
     })).sort((a, b) => a.label.localeCompare(b.label));
     
+    const formattedTruckTypes = Array.from(truckTypes).map(type => ({
+      value: type.toLowerCase(),
+      label: type
+    })).sort((a, b) => a.label.localeCompare(b.label));
+    
+    const formattedSleeperTypes = Array.from(sleeperTypes).map(type => ({
+      value: type.toLowerCase(),
+      label: type
+    })).sort((a, b) => a.label.localeCompare(b.label));
+    
     // Update cache
     optionsCache = {
       makes: formattedMakes,
@@ -198,6 +220,8 @@ export async function getFilterOptions(): Promise<FilterOptions> {
       engineManufacturers: formattedEngineManufacturers,
       engineModels: formattedEngineModels,
       cabTypes: formattedCabTypes,
+      truckTypes: formattedTruckTypes,
+      sleeperTypes: formattedSleeperTypes,
       minYear,
       maxYear,
       minPrice,

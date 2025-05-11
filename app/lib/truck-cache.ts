@@ -14,6 +14,8 @@ interface Truck {
   engine_model?: string;
   cab?: string;
   price?: number;
+  truck_type?: string;
+  sleeper_type?: string;
   [key: string]: any; // Allow for other properties
 }
 
@@ -65,6 +67,8 @@ export async function getFilterOptions() {
   const engineManufacturers = new Set<string>();
   const engineModelsMap: Record<string, Set<string>> = {};
   const cabTypes = new Set<string>();
+  const truckTypes = new Set<string>();
+  const sleeperTypes = new Set<string>();
   
   // Process each truck to extract unique values
   trucks.forEach(truck => {
@@ -109,6 +113,16 @@ export async function getFilterOptions() {
     // Extract cab type
     if (truck.cab) {
       cabTypes.add(truck.cab.toLowerCase());
+    }
+    
+    // Extract truck type (sleeper vs day cab)
+    if (truck.truck_type) {
+      truckTypes.add(truck.truck_type.toLowerCase());
+    }
+    
+    // Extract sleeper type
+    if (truck.sleeper_type) {
+      sleeperTypes.add(truck.sleeper_type.toLowerCase());
     }
   });
   
@@ -157,6 +171,16 @@ export async function getFilterOptions() {
     label: cab.charAt(0).toUpperCase() + cab.slice(1)
   }));
   
+  const truckTypesArray = Array.from(truckTypes).map(type => ({
+    value: type,
+    label: type.charAt(0).toUpperCase() + type.slice(1)
+  }));
+  
+  const sleeperTypesArray = Array.from(sleeperTypes).map(type => ({
+    value: type,
+    label: type.charAt(0).toUpperCase() + type.slice(1)
+  }));
+  
   return {
     makes: makesArray,
     models: modelsObject,
@@ -164,7 +188,9 @@ export async function getFilterOptions() {
     transmissionManufacturers: transmissionManufacturersArray,
     engineManufacturers: engineManufacturersArray,
     engineModels: engineModelsObject,
-    cabTypes: cabTypesArray
+    cabTypes: cabTypesArray,
+    truckTypes: truckTypesArray,
+    sleeperTypes: sleeperTypesArray
   };
 }
 
@@ -265,6 +291,24 @@ export async function filterTrucks(filters: any) {
       const truckCab = truck.cab?.toLowerCase();
       if (!truckCab || !filters.cab.some((cab: string) => 
         truckCab.includes(cab.toLowerCase()))) {
+        return false;
+      }
+    }
+    
+    // Check truck type filter (sleeper vs day cab)
+    if (filters.truckType && Array.isArray(filters.truckType) && filters.truckType.length > 0) {
+      const truckType = truck.truck_type?.toLowerCase();
+      if (!truckType || !filters.truckType.some((type: string) => 
+        truckType.includes(type.toLowerCase()))) {
+        return false;
+      }
+    }
+    
+    // Check sleeper type filter
+    if (filters.sleeperType && Array.isArray(filters.sleeperType) && filters.sleeperType.length > 0) {
+      const sleeperType = truck.sleeper_type?.toLowerCase();
+      if (!sleeperType || !filters.sleeperType.some((type: string) => 
+        sleeperType.includes(type.toLowerCase()))) {
         return false;
       }
     }

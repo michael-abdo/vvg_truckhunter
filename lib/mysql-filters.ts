@@ -19,7 +19,9 @@ export function buildSqlFilterFromParams({
   transmissionManufacturer = '',
   engineManufacturer = '',
   engineModel = '',
-  cabType = ''
+  cabType = '',
+  truckType = '',
+  sleeperType = ''
 }: {
   searchTerm?: string,
   minYear?: string,
@@ -36,7 +38,9 @@ export function buildSqlFilterFromParams({
   transmissionManufacturer?: string,
   engineManufacturer?: string,
   engineModel?: string,
-  cabType?: string
+  cabType?: string,
+  truckType?: string,
+  sleeperType?: string
 }) {
   const whereConditions: string[] = [];
   const values: any[] = [];
@@ -52,6 +56,8 @@ export function buildSqlFilterFromParams({
   const selectedEngineMfrs = engineManufacturer ? JSON.parse(engineManufacturer) : [];
   const selectedEngineModels = engineModel ? JSON.parse(engineModel) : [];
   const selectedCabTypes = cabType ? JSON.parse(cabType) : [];
+  const selectedTruckTypes = truckType ? JSON.parse(truckType) : [];
+  const selectedSleeperTypes = sleeperType ? JSON.parse(sleeperType) : [];
   
   // Search term filter (search in manufacturer, model, and description)
   if (searchTerm) {
@@ -152,6 +158,20 @@ export function buildSqlFilterFromParams({
     values.push(...selectedCabTypes);
   }
   
+  // Truck type filter (sleeper vs day cab)
+  if (selectedTruckTypes.length > 0) {
+    const placeholders = selectedTruckTypes.map(() => '?').join(', ');
+    whereConditions.push(`truck_type IN (${placeholders})`);
+    values.push(...selectedTruckTypes);
+  }
+  
+  // Sleeper type filter
+  if (selectedSleeperTypes.length > 0) {
+    const placeholders = selectedSleeperTypes.map(() => '?').join(', ');
+    whereConditions.push(`sleeper_type IN (${placeholders})`);
+    values.push(...selectedSleeperTypes);
+  }
+  
   return {
     whereClause: whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '',
     values
@@ -189,7 +209,7 @@ export function buildSqlFilterFromJsonBody(filters: any) {
     values.push(...filters.models);
   }
   
-  // Year range filter
+  // Year range filter (direct min/max)
   if (filters.yearRange) {
     if (filters.yearRange.min !== undefined) {
       whereConditions.push("year_clean >= ?");
@@ -201,15 +221,27 @@ export function buildSqlFilterFromJsonBody(filters: any) {
     }
   }
   
-  // Mileage range filter
-  if (filters.mileageRange) {
-    if (filters.mileageRange.min !== undefined) {
+  // Miles range filter (direct min/max)
+  if (filters.milesRange) {
+    if (filters.milesRange.min !== undefined) {
       whereConditions.push("mileage_clean >= ?");
-      values.push(Number(filters.mileageRange.min));
+      values.push(Number(filters.milesRange.min));
     }
-    if (filters.mileageRange.max !== undefined) {
+    if (filters.milesRange.max !== undefined) {
       whereConditions.push("mileage_clean <= ?");
-      values.push(Number(filters.mileageRange.max));
+      values.push(Number(filters.milesRange.max));
+    }
+  }
+  
+  // Horsepower range filter (direct min/max)
+  if (filters.horsepowerRange) {
+    if (filters.horsepowerRange.min !== undefined) {
+      whereConditions.push("horsepower >= ?");
+      values.push(Number(filters.horsepowerRange.min));
+    }
+    if (filters.horsepowerRange.max !== undefined) {
+      whereConditions.push("horsepower <= ?");
+      values.push(Number(filters.horsepowerRange.max));
     }
   }
   
@@ -235,7 +267,7 @@ export function buildSqlFilterFromJsonBody(filters: any) {
     );
   }
   
-  // Year filter with delta (from VIN search)
+  // Support for legacy year filter with delta (from VIN search)
   if (filters.year && typeof filters.year.value === 'number' && typeof filters.year.delta === 'number') {
     const minYear = filters.year.value - filters.year.delta;
     const maxYear = filters.year.value + filters.year.delta;
@@ -243,7 +275,7 @@ export function buildSqlFilterFromJsonBody(filters: any) {
     values.push(minYear, maxYear);
   }
   
-  // Miles/mileage filter with delta (from VIN search)
+  // Support for legacy miles/mileage filter with delta (from VIN search)
   if (filters.miles && typeof filters.miles.value === 'number' && typeof filters.miles.delta === 'number') {
     const minMiles = filters.miles.value - filters.miles.delta;
     const maxMiles = filters.miles.value + filters.miles.delta;
@@ -251,7 +283,7 @@ export function buildSqlFilterFromJsonBody(filters: any) {
     values.push(minMiles, maxMiles);
   }
   
-  // Horsepower filter with delta
+  // Support for legacy horsepower filter with delta
   if (filters.horsepower && typeof filters.horsepower.value === 'number' && typeof filters.horsepower.delta === 'number') {
     const minHP = filters.horsepower.value - filters.horsepower.delta;
     const maxHP = filters.horsepower.value + filters.horsepower.delta;
@@ -292,6 +324,20 @@ export function buildSqlFilterFromJsonBody(filters: any) {
     const placeholders = filters.cab.map(() => '?').join(', ');
     whereConditions.push(`cab IN (${placeholders})`);
     values.push(...filters.cab);
+  }
+  
+  // Truck type filter (sleeper vs day cab)
+  if (filters.truckType && Array.isArray(filters.truckType) && filters.truckType.length > 0) {
+    const placeholders = filters.truckType.map(() => '?').join(', ');
+    whereConditions.push(`truck_type IN (${placeholders})`);
+    values.push(...filters.truckType);
+  }
+  
+  // Sleeper type filter
+  if (filters.sleeperType && Array.isArray(filters.sleeperType) && filters.sleeperType.length > 0) {
+    const placeholders = filters.sleeperType.map(() => '?').join(', ');
+    whereConditions.push(`sleeper_type IN (${placeholders})`);
+    values.push(...filters.sleeperType);
   }
   
   return {

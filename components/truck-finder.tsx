@@ -23,15 +23,17 @@ import TruckSummaryStats from "./truck-summary-stats"
 interface ExtendedTruckFilters {
   makes: string[];
   models: string[];
-  miles: { value: number; delta: number };
-  year: { value: number; delta: number };
-  horsepower: { value: number; delta: number };
+  milesRange: { min: number; max: number };
+  yearRange: { min: number; max: number };
+  horsepowerRange: { min: number; max: number };
   transmission: string[];
   transmissionManufacturer: string[];
   engineManufacturer: string[];
   engineModel: string[];
   cab: string[];
   states: string[];
+  truckType: string[];
+  sleeperType: string[];
 }
 
 export default function TruckFinder() {
@@ -43,6 +45,8 @@ export default function TruckFinder() {
   const [engineManufacturers, setEngineManufacturers] = useState<Array<{ value: string; label: string }>>([])
   const [engineModels, setEngineModels] = useState<Record<string, Array<{ value: string; label: string }>>>({})
   const [cabTypes, setCabTypes] = useState<Array<{ value: string; label: string }>>([])
+  const [truckTypes, setTruckTypes] = useState<Array<{ value: string; label: string }>>([])
+  const [sleeperTypes, setSleeperTypes] = useState<Array<{ value: string; label: string }>>([])
   const [loading, setLoading] = useState(true)
   
   // Loading states for buttons
@@ -55,10 +59,6 @@ export default function TruckFinder() {
   const [selectedModels, setSelectedModels] = useState<string[]>([])
   const [makesOpen, setMakesOpen] = useState(false)
   const [modelsOpen, setModelsOpen] = useState(false)
-  const [miles, setMiles] = useState(300000)
-  const [year, setYear] = useState(2018)
-  const [milesDelta, setMilesDelta] = useState(100000)
-  const [yearDelta, setYearDelta] = useState(3)
   const [searchPerformed, setSearchPerformed] = useState(false)
   const [searchCount, setSearchCount] = useState(0)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
@@ -71,19 +71,21 @@ export default function TruckFinder() {
   const [vinMatchFound, setVinMatchFound] = useState(false)
   const [vinSpecs, setVinSpecs] = useState<any>(null)
 
-  // Update filters state to use the proper type
+  // Update filters state to use the proper type with ranges
   const [filters, setFilters] = useState<ExtendedTruckFilters>({
     makes: [],
     models: [],
-    miles: { value: 300000, delta: 100000 },
-    year: { value: 2018, delta: 3 },
-    horsepower: { value: 450, delta: 50 },
+    milesRange: { min: 200000, max: 400000 },
+    yearRange: { min: 2015, max: 2021 },
+    horsepowerRange: { min: 400, max: 500 },
     transmission: [],
     transmissionManufacturer: [],
     engineManufacturer: [],
     engineModel: [],
     cab: [],
-    states: []
+    states: [],
+    truckType: [],
+    sleeperType: []
   })
 
   // Available models based on selected makes
@@ -96,8 +98,6 @@ export default function TruckFinder() {
   });
 
   // Add new state variables for the new filters
-  const [horsepower, setHorsepower] = useState(450)
-  const [horsepowerDelta, setHorsepowerDelta] = useState(50)
   const [selectedTransmissions, setSelectedTransmissions] = useState<string[]>([])
   const [selectedTransMfrs, setSelectedTransMfrs] = useState<string[]>([])
   const [selectedEngineMfrs, setSelectedEngineMfrs] = useState<string[]>([])
@@ -108,6 +108,12 @@ export default function TruckFinder() {
   const [engineMfrsOpen, setEngineMfrsOpen] = useState(false)
   const [engineModelsOpen, setEngineModelsOpen] = useState(false)
   const [cabTypesOpen, setCabTypesOpen] = useState(false)
+
+  // Add state variables for the new truck type and sleeper type filters
+  const [selectedTruckTypes, setSelectedTruckTypes] = useState<string[]>([])
+  const [selectedSleeperTypes, setSelectedSleeperTypes] = useState<string[]>([])
+  const [truckTypesOpen, setTruckTypesOpen] = useState(false)
+  const [sleeperTypesOpen, setSleeperTypesOpen] = useState(false)
 
   // Update available engine models based on selected engine manufacturers
   const availableEngineModels = selectedEngineMfrs.flatMap((mfr) => {
@@ -147,6 +153,14 @@ export default function TruckFinder() {
   const [totalItems, setTotalItems] = useState<number>(0)
   const [totalPages, setTotalPages] = useState<number>(1)
 
+  // Update state variables for ranges instead of value/delta
+  const [minMiles, setMinMiles] = useState(200000)
+  const [maxMiles, setMaxMiles] = useState(400000)
+  const [minYear, setMinYear] = useState(2015)
+  const [maxYear, setMaxYear] = useState(2021)
+  const [minHorsepower, setMinHorsepower] = useState(400)
+  const [maxHorsepower, setMaxHorsepower] = useState(500)
+
   // Fetch filter options from database on component mount
   useEffect(() => {
     const fetchFilterOptions = async () => {
@@ -171,6 +185,8 @@ export default function TruckFinder() {
           console.log("Engine Manufacturers:", data.engineManufacturers || []);
           console.log("Engine Models:", data.engineModels || []);
           console.log("Cab Types:", data.cabTypes || []);
+          console.log("Truck Types:", data.truckTypes || []);
+          console.log("Sleeper Types:", data.sleeperTypes || []);
           
           // Set all dropdown options from the database
           setTruckMakes(data.makes.map((make: { label: string }) => ({ 
@@ -205,6 +221,8 @@ export default function TruckFinder() {
           }
           
           setCabTypes(data.cabTypes || [])
+          setTruckTypes(data.truckTypes || [])
+          setSleeperTypes(data.sleeperTypes || [])
         } else {
           console.error("Failed to fetch filter options:", data.error)
         }
@@ -218,7 +236,7 @@ export default function TruckFinder() {
     fetchFilterOptions()
   }, [])
   
-  // Update the handleSearch function to fix the type error
+  // Update the handleSearch function to fix the type error and use the new ranges
   const handleSearch = async () => {
     try {
       setSearchLoading(true)
@@ -240,9 +258,9 @@ export default function TruckFinder() {
           }
           return model
         }),
-        miles: { value: miles, delta: milesDelta },
-        year: { value: year, delta: yearDelta },
-        horsepower: { value: horsepower, delta: horsepowerDelta },
+        milesRange: { min: minMiles, max: maxMiles },
+        yearRange: { min: minYear, max: maxYear },
+        horsepowerRange: { min: minHorsepower, max: maxHorsepower },
         transmission: selectedTransmissions.map((trans: string) => 
           transmissionTypes.find(t => t.value === trans)?.label || trans
         ),
@@ -263,6 +281,12 @@ export default function TruckFinder() {
           cabTypes.find(c => c.value === cab)?.label || cab
         ),
         states: selectedStates, // Send the state codes directly, not the labels
+        truckType: selectedTruckTypes.map((type: string) => 
+          truckTypes.find(t => t.value === type)?.label || type
+        ),
+        sleeperType: selectedSleeperTypes.map((type: string) => 
+          sleeperTypes.find(t => t.value === type)?.label || type
+        )
       }
       
       // Log the filters being sent to the API
@@ -420,8 +444,10 @@ export default function TruckFinder() {
           // Only pre-fill the search criteria if values exist
           if (specs.make) setSelectedMakes([specs.make.toLowerCase()]);
           if (specs.model) setSelectedModels([specs.model.toLowerCase()]);
-          if (specs.year) setYear(specs.year);
-          if (specs.miles) setMiles(specs.miles);
+          if (specs.year) setMinYear(specs.year - 3);
+          if (specs.year) setMaxYear(specs.year + 3);
+          if (specs.miles) setMinMiles(Math.max(0, specs.miles - 100000));
+          if (specs.miles) setMaxMiles(specs.miles + 100000);
         } else {
           console.log("No VIN match found");
           setVinMatchFound(false);
@@ -443,8 +469,22 @@ export default function TruckFinder() {
   const applyVinSpecsToSearch = () => {
     if (vinSpecs) {
       setApplyVinSpecsLoading(true)
+      
+      // Apply the year from VIN specs with a range of +/- 3 years
+      if (vinSpecs.year) {
+        setMinYear(vinSpecs.year - 3);
+        setMaxYear(vinSpecs.year + 3);
+      }
+      
+      // Apply the miles from VIN specs with a range of +/- 100,000 miles
+      if (vinSpecs.miles) {
+        setMinMiles(Math.max(0, vinSpecs.miles - 100000));
+        setMaxMiles(vinSpecs.miles + 100000);
+      }
+      
       // Apply the specs to the search and switch to criteria tab
       setActiveTab("criteria");
+      
       // Then trigger search
       handleSearch().finally(() => {
         setApplyVinSpecsLoading(false)
@@ -568,32 +608,36 @@ export default function TruckFinder() {
     // Reset all filter selections
     setSelectedMakes([]);
     setSelectedModels([]);
-    setMiles(300000);
-    setYear(2018);
-    setMilesDelta(100000);
-    setYearDelta(3);
-    setHorsepower(450);
-    setHorsepowerDelta(50);
+    setMinMiles(200000);
+    setMaxMiles(400000);
+    setMinYear(2015);
+    setMaxYear(2021);
+    setMinHorsepower(400);
+    setMaxHorsepower(500);
     setSelectedTransmissions([]);
     setSelectedTransMfrs([]);
     setSelectedEngineMfrs([]);
     setSelectedEngineModels([]);
     setSelectedCabTypes([]);
     setSelectedStates([]);
+    setSelectedTruckTypes([]);
+    setSelectedSleeperTypes([]);
     
     // Reset filters object
     setFilters({
       makes: [],
       models: [],
-      miles: { value: 300000, delta: 100000 },
-      year: { value: 2018, delta: 3 },
-      horsepower: { value: 450, delta: 50 },
+      milesRange: { min: 200000, max: 400000 },
+      yearRange: { min: 2015, max: 2021 },
+      horsepowerRange: { min: 400, max: 500 },
       transmission: [],
       transmissionManufacturer: [],
       engineManufacturer: [],
       engineModel: [],
       cab: [],
-      states: []
+      states: [],
+      truckType: [],
+      sleeperType: []
     });
     
     // Hide search results
@@ -767,128 +811,221 @@ export default function TruckFinder() {
                   )}
                 </div>
 
-                {/* Miles */}
+                {/* Miles - Update to use min/max */}
                 <div className="space-y-2">
-                  <Label htmlFor="miles">Miles</Label>
-                  <div className="flex items-center space-x-2">
-                    <Button variant="outline" size="icon" onClick={() => decrementValue(setMiles, miles, 50000)}>
-                      <Minus className="h-4 w-4" />
-                    </Button>
-                    <Input
-                      id="miles"
-                      type="number"
-                      value={miles}
-                      onChange={(e) => setMiles(Number.parseInt(e.target.value) || 0)}
-                      className="text-center"
-                    />
-                    <Button variant="outline" size="icon" onClick={() => incrementValue(setMiles, miles, 50000)}>
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  <div className="flex items-center justify-between mt-2">
-                    <span className="text-xs text-muted-foreground">Range: ±</span>
-                    <div className="flex items-center space-x-2">
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        className="h-6 w-6"
-                        onClick={() => decrementValue(setMilesDelta, milesDelta, 50000)}
-                      >
-                        <Minus className="h-3 w-3" />
-                      </Button>
-                      <span className="text-xs font-medium">{milesDelta.toLocaleString()}</span>
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        className="h-6 w-6"
-                        onClick={() => incrementValue(setMilesDelta, milesDelta, 50000)}
-                      >
-                        <Plus className="h-3 w-3" />
-                      </Button>
+                  <Label htmlFor="miles">Miles Range</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <Label htmlFor="min-miles" className="text-xs">Min</Label>
+                      <div className="flex items-center space-x-2">
+                        <Button 
+                          variant="outline" 
+                          size="icon" 
+                          onClick={() => setMinMiles(Math.max(0, minMiles - 50000))}
+                        >
+                          <Minus className="h-4 w-4" />
+                        </Button>
+                        <Input
+                          id="min-miles"
+                          type="number"
+                          value={minMiles}
+                          onChange={(e) => {
+                            const value = Number.parseInt(e.target.value) || 0;
+                            setMinMiles(value);
+                            if (value > maxMiles) setMaxMiles(value);
+                          }}
+                          className="text-center"
+                        />
+                        <Button 
+                          variant="outline" 
+                          size="icon" 
+                          onClick={() => {
+                            const newValue = minMiles + 50000;
+                            setMinMiles(newValue);
+                            if (newValue > maxMiles) setMaxMiles(newValue);
+                          }}
+                        >
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                    <div>
+                      <Label htmlFor="max-miles" className="text-xs">Max</Label>
+                      <div className="flex items-center space-x-2">
+                        <Button 
+                          variant="outline" 
+                          size="icon" 
+                          onClick={() => {
+                            const newValue = Math.max(minMiles, maxMiles - 50000);
+                            setMaxMiles(newValue);
+                          }}
+                        >
+                          <Minus className="h-4 w-4" />
+                        </Button>
+                        <Input
+                          id="max-miles"
+                          type="number"
+                          value={maxMiles}
+                          onChange={(e) => {
+                            const value = Number.parseInt(e.target.value) || 0;
+                            setMaxMiles(Math.max(minMiles, value));
+                          }}
+                          className="text-center"
+                        />
+                        <Button 
+                          variant="outline" 
+                          size="icon" 
+                          onClick={() => setMaxMiles(maxMiles + 50000)}
+                        >
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </div>
 
-                {/* Year */}
+                {/* Year - Update to use min/max */}
                 <div className="space-y-2">
-                  <Label htmlFor="year">Year</Label>
-                  <div className="flex items-center space-x-2">
-                    <Button variant="outline" size="icon" onClick={() => decrementValue(setYear, year, 1)}>
-                      <Minus className="h-4 w-4" />
-                    </Button>
-                    <Input
-                      id="year"
-                      type="number"
-                      value={year}
-                      onChange={(e) => setYear(Number.parseInt(e.target.value) || 0)}
-                      className="text-center"
-                    />
-                    <Button variant="outline" size="icon" onClick={() => incrementValue(setYear, year, 1)}>
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  <div className="flex items-center justify-between mt-2">
-                    <span className="text-xs text-muted-foreground">Range: ±</span>
-                    <div className="flex items-center space-x-2">
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        className="h-6 w-6"
-                        onClick={() => decrementValue(setYearDelta, yearDelta, 1)}
-                      >
-                        <Minus className="h-3 w-3" />
-                      </Button>
-                      <span className="text-xs font-medium">{yearDelta} years</span>
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        className="h-6 w-6"
-                        onClick={() => incrementValue(setYearDelta, yearDelta, 1)}
-                      >
-                        <Plus className="h-3 w-3" />
-                      </Button>
+                  <Label htmlFor="year">Year Range</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <Label htmlFor="min-year" className="text-xs">Min</Label>
+                      <div className="flex items-center space-x-2">
+                        <Button 
+                          variant="outline" 
+                          size="icon" 
+                          onClick={() => setMinYear(minYear - 1)}
+                        >
+                          <Minus className="h-4 w-4" />
+                        </Button>
+                        <Input
+                          id="min-year"
+                          type="number"
+                          value={minYear}
+                          onChange={(e) => {
+                            const value = Number.parseInt(e.target.value) || 0;
+                            setMinYear(value);
+                            if (value > maxYear) setMaxYear(value);
+                          }}
+                          className="text-center"
+                        />
+                        <Button 
+                          variant="outline" 
+                          size="icon" 
+                          onClick={() => {
+                            const newValue = minYear + 1;
+                            setMinYear(newValue);
+                            if (newValue > maxYear) setMaxYear(newValue);
+                          }}
+                        >
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                    <div>
+                      <Label htmlFor="max-year" className="text-xs">Max</Label>
+                      <div className="flex items-center space-x-2">
+                        <Button 
+                          variant="outline" 
+                          size="icon" 
+                          onClick={() => {
+                            const newValue = Math.max(minYear, maxYear - 1);
+                            setMaxYear(newValue);
+                          }}
+                        >
+                          <Minus className="h-4 w-4" />
+                        </Button>
+                        <Input
+                          id="max-year"
+                          type="number"
+                          value={maxYear}
+                          onChange={(e) => {
+                            const value = Number.parseInt(e.target.value) || 0;
+                            setMaxYear(Math.max(minYear, value));
+                          }}
+                          className="text-center"
+                        />
+                        <Button 
+                          variant="outline" 
+                          size="icon" 
+                          onClick={() => setMaxYear(maxYear + 1)}
+                        >
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </div>
 
-                {/* Horsepower */}
+                {/* Horsepower - Update to use min/max */}
                 <div className="space-y-2">
-                  <Label htmlFor="horsepower">Horsepower</Label>
-                  <div className="flex items-center space-x-2">
-                    <Button variant="outline" size="icon" onClick={() => decrementValue(setHorsepower, horsepower, 25)}>
-                      <Minus className="h-4 w-4" />
-                    </Button>
-                    <Input
-                      id="horsepower"
-                      type="number"
-                      value={horsepower}
-                      onChange={(e) => setHorsepower(Number.parseInt(e.target.value) || 0)}
-                      className="text-center"
-                    />
-                    <Button variant="outline" size="icon" onClick={() => incrementValue(setHorsepower, horsepower, 25)}>
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  <div className="flex items-center justify-between mt-2">
-                    <span className="text-xs text-muted-foreground">Range: ±</span>
-                    <div className="flex items-center space-x-2">
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        className="h-6 w-6"
-                        onClick={() => decrementValue(setHorsepowerDelta, horsepowerDelta, 25)}
-                      >
-                        <Minus className="h-3 w-3" />
-                      </Button>
-                      <span className="text-xs font-medium">{horsepowerDelta} HP</span>
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        className="h-6 w-6"
-                        onClick={() => incrementValue(setHorsepowerDelta, horsepowerDelta, 25)}
-                      >
-                        <Plus className="h-3 w-3" />
-                      </Button>
+                  <Label htmlFor="horsepower">Horsepower Range</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <Label htmlFor="min-horsepower" className="text-xs">Min</Label>
+                      <div className="flex items-center space-x-2">
+                        <Button 
+                          variant="outline" 
+                          size="icon" 
+                          onClick={() => setMinHorsepower(Math.max(0, minHorsepower - 25))}
+                        >
+                          <Minus className="h-4 w-4" />
+                        </Button>
+                        <Input
+                          id="min-horsepower"
+                          type="number"
+                          value={minHorsepower}
+                          onChange={(e) => {
+                            const value = Number.parseInt(e.target.value) || 0;
+                            setMinHorsepower(value);
+                            if (value > maxHorsepower) setMaxHorsepower(value);
+                          }}
+                          className="text-center"
+                        />
+                        <Button 
+                          variant="outline" 
+                          size="icon" 
+                          onClick={() => {
+                            const newValue = minHorsepower + 25;
+                            setMinHorsepower(newValue);
+                            if (newValue > maxHorsepower) setMaxHorsepower(newValue);
+                          }}
+                        >
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                    <div>
+                      <Label htmlFor="max-horsepower" className="text-xs">Max</Label>
+                      <div className="flex items-center space-x-2">
+                        <Button 
+                          variant="outline" 
+                          size="icon" 
+                          onClick={() => {
+                            const newValue = Math.max(minHorsepower, maxHorsepower - 25);
+                            setMaxHorsepower(newValue);
+                          }}
+                        >
+                          <Minus className="h-4 w-4" />
+                        </Button>
+                        <Input
+                          id="max-horsepower"
+                          type="number"
+                          value={maxHorsepower}
+                          onChange={(e) => {
+                            const value = Number.parseInt(e.target.value) || 0;
+                            setMaxHorsepower(Math.max(minHorsepower, value));
+                          }}
+                          className="text-center"
+                        />
+                        <Button 
+                          variant="outline" 
+                          size="icon" 
+                          onClick={() => setMaxHorsepower(maxHorsepower + 25)}
+                        >
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1229,6 +1366,140 @@ export default function TruckFinder() {
                   )}
                 </div>
 
+                {/* Truck Type (Sleeper vs Day Cab) */}
+                <div className="space-y-2">
+                  <Label htmlFor="truck-type">Truck Type</Label>
+                  <Popover open={truckTypesOpen} onOpenChange={setTruckTypesOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={truckTypesOpen}
+                        className="w-full justify-between"
+                      >
+                        {selectedTruckTypes.length > 0 ? `${selectedTruckTypes.length} selected` : "Select truck type..."}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-full p-0">
+                      <Command>
+                        <CommandInput placeholder="Search truck types..." />
+                        <CommandList>
+                          <CommandEmpty>No truck type found.</CommandEmpty>
+                          <CommandGroup>
+                            {truckTypes.map((type) => (
+                              <CommandItem
+                                key={type.value}
+                                value={type.value}
+                                onSelect={() => {
+                                  setSelectedTruckTypes(
+                                    selectedTruckTypes.includes(type.value)
+                                      ? selectedTruckTypes.filter((t) => t !== type.value)
+                                      : [...selectedTruckTypes, type.value],
+                                  )
+                                }}
+                              >
+                                <Check
+                                  className={cn(
+                                    "mr-2 h-4 w-4",
+                                    selectedTruckTypes.includes(type.value) ? "opacity-100" : "opacity-0",
+                                  )}
+                                />
+                                {type.label}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                  {selectedTruckTypes.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {selectedTruckTypes.map((type) => {
+                        const typeLabel = truckTypes.find((t) => t.value === type)?.label
+                        return (
+                          <Badge key={type} variant="secondary" className="text-xs">
+                            {typeLabel}
+                            <button
+                              className="ml-1 text-xs"
+                              onClick={() => setSelectedTruckTypes(selectedTruckTypes.filter((t) => t !== type))}
+                            >
+                              ×
+                            </button>
+                          </Badge>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Sleeper Type */}
+                <div className="space-y-2">
+                  <Label htmlFor="sleeper-type">Sleeper Type</Label>
+                  <Popover open={sleeperTypesOpen} onOpenChange={setSleeperTypesOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={sleeperTypesOpen}
+                        className="w-full justify-between"
+                      >
+                        {selectedSleeperTypes.length > 0 ? `${selectedSleeperTypes.length} selected` : "Select sleeper type..."}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-full p-0">
+                      <Command>
+                        <CommandInput placeholder="Search sleeper types..." />
+                        <CommandList>
+                          <CommandEmpty>No sleeper type found.</CommandEmpty>
+                          <CommandGroup>
+                            {sleeperTypes.map((type) => (
+                              <CommandItem
+                                key={type.value}
+                                value={type.value}
+                                onSelect={() => {
+                                  setSelectedSleeperTypes(
+                                    selectedSleeperTypes.includes(type.value)
+                                      ? selectedSleeperTypes.filter((t) => t !== type.value)
+                                      : [...selectedSleeperTypes, type.value],
+                                  )
+                                }}
+                              >
+                                <Check
+                                  className={cn(
+                                    "mr-2 h-4 w-4",
+                                    selectedSleeperTypes.includes(type.value) ? "opacity-100" : "opacity-0",
+                                  )}
+                                />
+                                {type.label}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                  {selectedSleeperTypes.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {selectedSleeperTypes.map((type) => {
+                        const typeLabel = sleeperTypes.find((t) => t.value === type)?.label
+                        return (
+                          <Badge key={type} variant="secondary" className="text-xs">
+                            {typeLabel}
+                            <button
+                              className="ml-1 text-xs"
+                              onClick={() => setSelectedSleeperTypes(selectedSleeperTypes.filter((t) => t !== type))}
+                            >
+                              ×
+                            </button>
+                          </Badge>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+
                 {/* State */}
                 <div className="space-y-2">
                   <Label htmlFor="state">State</Label>
@@ -1456,38 +1727,23 @@ export default function TruckFinder() {
               )}
               <div className="mt-1">
                 <span>
-                  Year: {filters.year.value - filters.year.delta} - {filters.year.value + filters.year.delta}
+                  Year: {filters.yearRange.min} - {filters.yearRange.max}
                 </span>
                 {" • "}
                 <span>
-                  Miles: {(filters.miles.value - filters.miles.delta).toLocaleString()} -{" "}
-                  {(filters.miles.value + filters.miles.delta).toLocaleString()}
+                  Miles: {filters.milesRange.min.toLocaleString()} - {filters.milesRange.max.toLocaleString()}
                 </span>
               </div>
               
               {/* Display additional filters when they are used */}
-              {filters.horsepower && (
+              {filters.horsepowerRange && (
                 <div className="mt-1">
                   <span>
-                    Horsepower: {filters.horsepower.value - filters.horsepower.delta} - {filters.horsepower.value + filters.horsepower.delta} HP
+                    Horsepower: {filters.horsepowerRange.min} - {filters.horsepowerRange.max} HP
                   </span>
                 </div>
               )}
               
-              {filters.transmission && filters.transmission.length > 0 && (
-                <div className="flex flex-wrap gap-1 items-center mt-1">
-                  <span>Transmission:</span>
-                  {filters.transmission.map((t: string) => {
-                    const label = transmissionTypes.find((type) => type.value === t)?.label;
-                    return (
-                      <Badge key={t} variant="secondary" className="text-xs">
-                        {label}
-                      </Badge>
-                    );
-                  })}
-                </div>
-              )}
-
               {filters.states && filters.states.length > 0 && (
                 <div className="flex flex-wrap gap-1 items-center mt-1">
                   <span>States:</span>
@@ -1499,6 +1755,30 @@ export default function TruckFinder() {
                       </Badge>
                     );
                   })}
+                </div>
+              )}
+
+              {/* Add truck type filter badges */}
+              {filters.truckType && filters.truckType.length > 0 && (
+                <div className="flex flex-wrap gap-1 items-center mt-1">
+                  <span>Truck Type:</span>
+                  {filters.truckType.map((type: string) => (
+                    <Badge key={type} variant="secondary" className="text-xs">
+                      {type}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+              
+              {/* Add sleeper type filter badges */}
+              {filters.sleeperType && filters.sleeperType.length > 0 && (
+                <div className="flex flex-wrap gap-1 items-center mt-1">
+                  <span>Sleeper Type:</span>
+                  {filters.sleeperType.map((type: string) => (
+                    <Badge key={type} variant="secondary" className="text-xs">
+                      {type}
+                    </Badge>
+                  ))}
                 </div>
               )}
             </div>
