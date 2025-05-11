@@ -31,6 +31,10 @@ interface Truck {
   truck_location?: string;
   url?: string;
   engine_model?: string;
+  isValidUrl?: boolean;
+  mileage_clean?: number;
+  year_clean?: number;
+  truck_type?: string;
 }
 
 // Filter type definition
@@ -223,7 +227,8 @@ const generateRandomTruck = (id: number, filters: TruckFilters): Truck => {
     transmissionManufacturer: "",
     engineManufacturer: "",
     engineModel: "",
-    cab: ""
+    cab: "",
+    isValidUrl: true
   }
 }
 
@@ -310,13 +315,63 @@ const TruckList: React.FC<TruckListProps> = ({
       return newSet;
     });
   };
+
+  // Function to validate TruckPaper URLs 
+  const validateTruckPaperUrls = async (trucksToValidate: Truck[]) => {
+    const validatedTrucks = await Promise.all(
+      trucksToValidate.map(async (truck) => {
+        // Skip validation if we don't have a URL
+        if (!truck.truckPaperUrl && !truck.url) {
+          return { ...truck, isValidUrl: false };
+        }
+
+        const urlToCheck = truck.truckPaperUrl || truck.url || '';
+        
+        try {
+          // Call our API endpoint to validate the URL
+          const response = await fetch('/api/validate-url', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ url: urlToCheck }),
+          });
+          
+          if (!response.ok) {
+            console.error(`Failed to validate URL ${urlToCheck}: API returned ${response.status}`);
+            return { ...truck, isValidUrl: true }; // Default to true if API call fails
+          }
+          
+          const data = await response.json();
+          return { ...truck, isValidUrl: data.isValid };
+        } catch (error) {
+          console.error(`Failed to validate URL ${urlToCheck}:`, error);
+          return { ...truck, isValidUrl: true }; // Default to true if validation fails
+        }
+      })
+    );
+    
+    return validatedTrucks;
+  };
   
-  // Update internal state when props change
+  // Update internal state when props change and validate URLs
   useEffect(() => {
     if (disableExternalFetching) {
       // When external fetching is disabled, always use the props directly
       console.log("TruckList: Using trucks from props:", propTrucks);
-      setTrucks(propTrucks || []);
+      
+      // Validate URLs for the trucks
+      const validateUrls = async () => {
+        try {
+          const validatedTrucks = await validateTruckPaperUrls(propTrucks || []);
+          setTrucks(validatedTrucks);
+        } catch (error) {
+          console.error("Failed to validate truck URLs:", error);
+          setTrucks(propTrucks || []);
+        }
+      };
+      
+      validateUrls();
       
       // Update our internal pagination calculations
       setInternalTotalItems(propTrucks.length);
@@ -332,6 +387,66 @@ const TruckList: React.FC<TruckListProps> = ({
       setLoading(propLoading);
     }
   }, [propTrucks, disableExternalFetching, currentPage, pageSize, itemsPerPage, propLoading]);
+  
+  // Generate similar trucks search URL
+  const getSimilarTrucksUrl = (truck: Truck) => {
+    // Get the truck parameters, handling different property names
+    const make = truck.make || truck.manufacturer || '';
+    const model = truck.model || '';
+    const year = truck.year_clean || 0;
+    const miles = truck.mileage_clean || 0;
+    const truckType = truck.truck_type || '';
+    console.log("Truck:", truck);
+    
+    // Calculate year range (+/- 1 year)
+    const yearMin = year - 1;
+    const yearMax = year + 1;
+    
+    // Calculate mileage range (+/- 50,000 miles)
+    const milesMin = Math.max(0, miles - 50000);
+    const milesMax = miles + 50000;
+    
+    // Format the URL with search parameters
+    const searchParams = new URLSearchParams();
+    
+    // Determine category based on truck type
+    // Category 16013 for Day Cab, 16045 for Sleeper Cab, default to 16045
+    let category = '16045'; // Default to Sleeper Cab
+    
+    if (truckType) {
+      const normalizedType = truckType.toLowerCase();
+      if (normalizedType.includes('day cab')) {
+        category = '16013';
+      } else if (normalizedType.includes('sleeper')) {
+        category = '16045';
+      }
+    }
+    
+    searchParams.append('Category', category);
+    
+    // Add manufacturer if available
+    if (make) {
+      searchParams.append('Manufacturer', make);
+    }
+    
+    // Add model if available
+    if (model) {
+      searchParams.append('Model', model);
+    }
+    
+    // Add year range if available
+    if (year > 0) {
+      searchParams.append('Year', `${yearMin}*${yearMax}`);
+    }
+    
+    // Add mileage range if available
+    if (miles > 0) {
+      searchParams.append('Mileage', `${milesMin}*${milesMax}`);
+    }
+    
+    // Build the complete URL
+    return `https://www.truckpaper.com/listings/search?${searchParams.toString()}`;
+  };
   
   // Handle page change
   const handlePageChange = (newPage: number) => {
@@ -450,11 +565,11 @@ const TruckList: React.FC<TruckListProps> = ({
                     asChild
                   >
                     <a 
-                      href={truck.truckPaperUrl || truck.url} 
+                      href={truck.isValidUrl === false ? getSimilarTrucksUrl(truck) : (truck.truckPaperUrl || truck.url)} 
                       target="_blank" 
                       rel="noopener noreferrer"
                     >
-                      Details
+                      {truck.isValidUrl === false ? "Show Similar Trucks" : "Details"}
                       <ChevronRight className="ml-1 h-4 w-4" />
                     </a>
                   </Button>
