@@ -28,7 +28,7 @@ export default function PendoScript() {
             // You can add other account properties as needed
           }
         });
-})('1142c1d1-eb91-4ef1-617b-03a51b0daf7f');
+})('f18f48c5-575b-4d19-6112-7ab62b40b73d');
   }, [session]); // Re-run when session changes
 
   return null; // This component doesn't render anything
