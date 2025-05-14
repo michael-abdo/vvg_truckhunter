@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 export default withAuth(
   function middleware(req) {
+    // Additional custom middleware logic could be added here if needed
     return NextResponse.next();
   },
   {
@@ -15,6 +16,12 @@ export default withAuth(
   }
 );
 
+// Update the matcher to only protect specific routes
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  matcher: [
+    "/dashboard/:path*",
+    "/api/:path*", 
+    // Exclude authentication-related routes from protection
+    "/((?!api/auth|_next/static|_next/image|favicon.ico|sign-in|auth).*)"
+  ],
 }; 
